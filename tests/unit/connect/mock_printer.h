@@ -9,16 +9,18 @@
 
 namespace connect_client {
 
-constexpr Printer::Params params_idle() {
-    Printer::Params params {};
+inline Printer::Params params_idle() {
+    Printer::Params params(std::nullopt);
 
     params.job_id = 13;
-    params.state = Printer::DeviceState::Idle;
+    params.state = printer_state::DeviceState::Idle;
+    params.nozzle_diameter = 0.4;
+    params.version = { 2, 3, 0 };
 
     return params;
 }
 
-class MockPrinter final : public Printer {
+class MockPrinter : public Printer {
 private:
     const Params &p;
 
@@ -28,12 +30,13 @@ public:
         info.appendix = false;
         strcpy(info.fingerprint, "DEADBEEF");
         info.firmware_version = "TST-1234";
-        strcpy(info.serial_number, "FAKE-1234");
+        strcpy(info.serial_number.begin(), "FAKE-1234");
     }
 
     std::vector<std::string> submitted_gcodes;
 
-    virtual void renew() override {}
+    virtual void renew(std::optional<SharedBuffer::Borrow> borrow) override {}
+    virtual void drop_paths() override {}
     virtual Config load_config() override {
         return Config();
     }
@@ -58,6 +61,10 @@ public:
         return false;
     }
 
+    virtual const char *delete_file(const char *) override {
+        return nullptr;
+    }
+
     virtual void submit_gcode(const char *gcode) override {
         submitted_gcodes.push_back(gcode);
     }
@@ -70,9 +77,11 @@ public:
         return false;
     }
 
-    virtual uint32_t files_hash() const override {
-        return 0;
+    virtual bool is_idle() const override {
+        return false;
     }
+
+    virtual void init_connect(char *) override {}
 };
 
-}
+} // namespace connect_client

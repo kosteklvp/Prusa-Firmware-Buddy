@@ -8,7 +8,7 @@
 #include <cstdarg>
 #include "chunked.h"
 #include "debug.h"
-#include <overloaded_visitor.hpp>
+#include <common/utils/overloaded_visitor.hpp>
 
 using automata::ExecutionControl;
 using http::ConnectionHandling;
@@ -17,10 +17,12 @@ using http::parser::ResponseParser;
 using std::get;
 using std::get_if;
 using std::holds_alternative;
+using std::make_tuple;
 using std::min;
 using std::nullopt;
 using std::optional;
 using std::string_view;
+using std::tuple;
 using std::variant;
 
 LOG_COMPONENT_DEF(httpc, LOG_SEVERITY_DEBUG);
@@ -125,7 +127,7 @@ namespace {
         }
     };
 
-}
+} // namespace
 
 const HeaderOut *Request::extra_headers() const {
     return nullptr;
@@ -154,7 +156,7 @@ variant<size_t, Error> Response::read_body(uint8_t *buffer, size_t size) {
             memmove(body_leftover.data(), body_leftover.data() + chunk, leftover_size);
             pos += chunk;
         } else {
-            auto read_resp = conn->rx(write_pos, available);
+            auto read_resp = conn->rx(write_pos, available, false);
             if (holds_alternative<Error>(read_resp)) {
                 return get<Error>(read_resp);
             }
@@ -171,6 +173,30 @@ variant<size_t, Error> Response::read_body(uint8_t *buffer, size_t size) {
     }
 
     content_length_rest -= pos;
+
+    if (pos == 0 && content_length_rest > 0) {
+        // Early EOF
+        return Error::Network;
+    }
+    return pos;
+}
+
+variant<size_t, Error> Response::read_all(uint8_t *buffer, size_t size) {
+    if (content_length() > size) {
+        return Error::ResponseTooLong;
+    }
+
+    size_t pos = 0;
+
+    while (content_length() > 0) {
+        const auto result = read_body(buffer + pos, content_length());
+        if (holds_alternative<size_t>(result)) {
+            pos += get<size_t>(result);
+        } else {
+            return get<Error>(result);
+        }
+    }
+
     return pos;
 }
 
@@ -235,14 +261,14 @@ optional<Error> HttpClient::send_request(const char *host, Connection *conn, Req
     return err_out;
 }
 
-variant<Response, Error> HttpClient::parse_response(Connection *conn) {
-    ResponseParser parser;
+variant<Response, Error> HttpClient::parse_response(Connection *conn, ExtraHeader *extra_resp_hdr) {
+    ResponseParser parser(extra_resp_hdr);
 
     uint8_t buffer[Response::MAX_LEFTOVER];
 
     // TODO: Timeouts
     for (;;) {
-        auto read = conn->rx(buffer, sizeof buffer);
+        auto read = conn->rx(buffer, sizeof buffer, false);
         if (holds_alternative<Error>(read)) {
             return get<Error>(read);
         }
@@ -266,18 +292,18 @@ variant<Response, Error> HttpClient::parse_response(Connection *conn) {
             response.content_length_rest = parser.content_length.value_or(0);
             response.leftover_size = rest;
             response.content_type = parser.content_type;
-            response.command_id = parser.command_id;
+            response.content_encryption_mode = parser.content_encryption_mode;
             if (parser.keep_alive.has_value()) {
                 response.can_keep_alive = *parser.keep_alive;
             } else {
                 response.can_keep_alive = (parser.version_major == 1) && (parser.version_minor >= 1);
             }
-            return std::move(response);
+            return response;
         }
     }
 }
 
-variant<Response, Error> HttpClient::send(Request &request) {
+variant<Response, Error> HttpClient::send(Request &request, ExtraHeader *extra_resp_hdr) {
     auto conn_raw = factory.connection();
     if (holds_alternative<Error>(conn_raw)) {
         return get<Error>(conn_raw);
@@ -296,7 +322,7 @@ variant<Response, Error> HttpClient::send(Request &request) {
         return *error;
     }
 
-    return HttpClient::parse_response(conn);
+    return HttpClient::parse_response(conn, extra_resp_hdr);
 }
 
-}
+} // namespace http

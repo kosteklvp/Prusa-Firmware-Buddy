@@ -24,8 +24,11 @@
 #include <math.h>
 #include <stddef.h>
 
-#include "../inc/MarlinConfigPre.h"
+#include "inc/MarlinConfigPre.h"
 
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 //
 // Conditional type assignment magic. For example...
 //
@@ -99,8 +102,8 @@ struct Flags {
   void set(const int n)                    { b |=  (bits_t)_BV(n); }
   void clear(const int n)                  { b &= ~(bits_t)_BV(n); }
   bool test(const int n) const             { return TEST(b, n); }
-  const bool operator[](const int n)       { return test(n); }
-  const bool operator[](const int n) const { return test(n); }
+  bool operator[](const int n)       { return test(n); }
+  bool operator[](const int n) const { return test(n); }
   int size() const                         { return sizeof(b); }
 };
 
@@ -277,6 +280,8 @@ typedef struct XYZEval<volatile int32_t> xyze_vlong_t;
 typedef struct XYval<float>        xy_float_t;
 typedef struct XYZval<float>      xyz_float_t;
 typedef struct XYZEval<float>    xyze_float_t;
+
+typedef struct XYZEval<double>    xyze_double_t;
 
 typedef struct XYval<feedRate_t>     xy_feedrate_t;
 typedef struct XYZval<feedRate_t>   xyz_feedrate_t;
@@ -711,10 +716,14 @@ struct XYZEval {
   FI XYZEval<T>  operator/ (const XYZEval<T>  &rs)        { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e /= rs.e, ls.x /= rs.x, ls.y /= rs.y, ls.z /= rs.z, ls.i /= rs.i, ls.j /= rs.j, ls.k /= rs.k, ls.u /= rs.u, ls.v /= rs.v, ls.w /= rs.w); return ls; }
   FI XYZEval<T>  operator* (const float &v)         const { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e *= v,    ls.x *= v,    ls.y *= v,    ls.z *= v,    ls.i *= v,    ls.j *= v,    ls.k *= v,    ls.u *= v,    ls.v *= v,    ls.w *= v   ); return ls; }
   FI XYZEval<T>  operator* (const float &v)               { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e *= v,    ls.x *= v,    ls.y *= v,    ls.z *= v,    ls.i *= v,    ls.j *= v,    ls.k *= v,    ls.u *= v,    ls.v *= v,    ls.w *= v   ); return ls; }
+  FI XYZEval<T>  operator* (const double &v)        const { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e *= v,    ls.x *= v,    ls.y *= v,    ls.z *= v,    ls.i *= v,    ls.j *= v,    ls.k *= v,    ls.u *= v,    ls.v *= v,    ls.w *= v   ); return ls; }
+  FI XYZEval<T>  operator* (const double &v)              { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e *= v,    ls.x *= v,    ls.y *= v,    ls.z *= v,    ls.i *= v,    ls.j *= v,    ls.k *= v,    ls.u *= v,    ls.v *= v,    ls.w *= v   ); return ls; }
   FI XYZEval<T>  operator* (const int &v)           const { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e *= v,    ls.x *= v,    ls.y *= v,    ls.z *= v,    ls.i *= v,    ls.j *= v,    ls.k *= v,    ls.u *= v,    ls.v *= v,    ls.w *= v   ); return ls; }
   FI XYZEval<T>  operator* (const int &v)                 { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e *= v,    ls.x *= v,    ls.y *= v,    ls.z *= v,    ls.i *= v,    ls.j *= v,    ls.k *= v,    ls.u *= v,    ls.v *= v,    ls.w *= v   ); return ls; }
   FI XYZEval<T>  operator/ (const float &v)         const { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e /= v,    ls.x /= v,    ls.y /= v,    ls.z /= v,    ls.i /= v,    ls.j /= v,    ls.k /= v,    ls.u /= v,    ls.v /= v,    ls.w /= v   ); return ls; }
   FI XYZEval<T>  operator/ (const float &v)               { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e /= v,    ls.x /= v,    ls.y /= v,    ls.z /= v,    ls.i /= v,    ls.j /= v,    ls.k /= v,    ls.u /= v,    ls.v /= v,    ls.w /= v   ); return ls; }
+  FI XYZEval<T>  operator/ (const double &v)        const { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e /= v,    ls.x /= v,    ls.y /= v,    ls.z /= v,    ls.i /= v,    ls.j /= v,    ls.k /= v,    ls.u /= v,    ls.v /= v,    ls.w /= v   ); return ls; }
+  FI XYZEval<T>  operator/ (const double &v)              { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e /= v,    ls.x /= v,    ls.y /= v,    ls.z /= v,    ls.i /= v,    ls.j /= v,    ls.k /= v,    ls.u /= v,    ls.v /= v,    ls.w /= v   ); return ls; }
   FI XYZEval<T>  operator/ (const int &v)           const { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e /= v,    ls.x /= v,    ls.y /= v,    ls.z /= v,    ls.i /= v,    ls.j /= v,    ls.k /= v,    ls.u /= v,    ls.v /= v,    ls.w /= v   ); return ls; }
   FI XYZEval<T>  operator/ (const int &v)                 { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(ls.e /= v,    ls.x /= v,    ls.y /= v,    ls.z /= v,    ls.i /= v,    ls.j /= v,    ls.k /= v,    ls.u /= v,    ls.v /= v,    ls.w /= v   ); return ls; }
   FI XYZEval<T>  operator>>(const int &v)           const { XYZEval<T> ls = *this; LOGICAL_AXIS_CODE(_RS(ls.e),    _RS(ls.x),    _RS(ls.y),    _RS(ls.z),    _RS(ls.i),    _RS(ls.j),    _RS(ls.k),    _RS(ls.u),    _RS(ls.v),    _RS(ls.w)   ); return ls; }
@@ -760,3 +769,5 @@ struct XYZEval {
 #define LOOP_XYZE(VAR) LOOP_S_LE_N(VAR, X_AXIS, E_AXIS)
 #define LOOP_XYZE_N(VAR) LOOP_S_L_N(VAR, X_AXIS, XYZE_N)
 #define LOOP_ABCE(VAR) LOOP_S_LE_N(VAR, A_AXIS, E_AXIS)
+
+#pragma GCC diagnostic pop

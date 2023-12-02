@@ -2,8 +2,6 @@
 #include "config.h"
 #include "stdlib.h"
 
-string_view_utf8 IScreenMenu::no_label = string_view_utf8::MakeCPUFLASH((const uint8_t *)no_labelS);
-
 IScreenMenu::IScreenMenu(window_t *parent, string_view_utf8 label, EFooter FOOTER)
     : AddSuperWindow<screen_t>(parent, parent != nullptr ? win_type_t::dialog : win_type_t::normal)
     , header(this)
@@ -18,8 +16,9 @@ IScreenMenu::IScreenMenu(window_t *parent, string_view_utf8 label, EFooter FOOTE
 }
 
 void IScreenMenu::InitState(screen_init_variant var) {
-    if (!var.GetMenuPosition())
+    if (!var.GetMenuPosition()) {
         return;
+    }
     menu.InitState(*(var.GetMenuPosition()));
 }
 

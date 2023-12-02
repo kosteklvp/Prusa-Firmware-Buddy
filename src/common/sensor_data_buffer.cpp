@@ -3,7 +3,7 @@
 static SemaphoreHandle_t mutex = nullptr;
 static SensorData::SensorDataBuffer *buffer = nullptr;
 
-extern "C" void info_screen_handler(metric_point_t *point) {
+void info_screen_handler(metric_point_t *point) {
     SensorData::HandleNewData(point);
 }
 
@@ -31,12 +31,18 @@ metric_handler_t *SensorDataBuffer::getHandler() {
     return nullptr;
 }
 
+#if BOARD_IS_XLBUDDY
+static constexpr Sensor first_sensor_to_log = Sensor::bedTemp;
+#elif BOARD_IS_XBUDDY
 static constexpr Sensor first_sensor_to_log = Sensor::printFan;
-
+#else
+static constexpr Sensor first_sensor_to_log = Sensor::MCUTemp;
+#endif
 bool SensorDataBuffer::enableMetrics() {
 
-    if (allMetricsEnabled)
+    if (allMetricsEnabled) {
         return true;
+    }
     size_t count = 0;
     metric_t *metric = metric_get_linked_list();
     metric_handler_t *handler = getHandler();
@@ -49,7 +55,7 @@ bool SensorDataBuffer::enableMetrics() {
         if (it != sensors.end() && strcmp(metric->name, it->first) == 0) {
             count++;
             metric->enabled_handlers |= (1 << handler->identifier);
-            sensorValues[static_cast<size_t>(it->second)].attribute.enabled = true;
+            sensorValues[static_cast<size_t>(it->second)].set_enabled();
         }
         // check if we enabled handler for all metrics, if yes return true
         if (count == sensors.size()) {
@@ -72,8 +78,7 @@ void SensorDataBuffer::disableMetrics() {
         auto it = std::lower_bound(sensors.begin(), sensors.end(), pair { metric->name, first_sensor_to_log }, compareFN {});
         if (it != sensors.end() && strcmp(metric->name, it->first) == 0) {
             metric->enabled_handlers &= ~(1 << handler->identifier);
-            sensorValues[static_cast<size_t>(it->second)].attribute.enabled = false;
-            sensorValues[static_cast<size_t>(it->second)].attribute.valid = false;
+            sensorValues[static_cast<size_t>(it->second)] = Value();
         }
         metric = metric->next;
     }
@@ -98,9 +103,11 @@ void SensorDataBuffer::HandleNewData(metric_point_t *point) {
         auto it = std::lower_bound(sensors.begin(), sensors.end(), pair { point->metric->name, first_sensor_to_log }, compareFN {});
         if (it != sensors.end() && strcmp(it->first, point->metric->name) == 0) {
             if (xSemaphoreTake(mutex, (TickType_t)portMAX_DELAY) == pdTRUE) {
-                sensorValues[static_cast<uint16_t>(it->second)].float_val = point->value_float;
-                sensorValues[static_cast<uint16_t>(it->second)].attribute.valid = true;
-                sensorValues[static_cast<uint16_t>(it->second)].attribute.type = point->metric->type == METRIC_VALUE_FLOAT ? Type::floatType : Type::intType;
+                if (point->metric->type == METRIC_VALUE_FLOAT) {
+                    sensorValues[static_cast<uint16_t>(it->second)] = Value(point->value_float);
+                } else {
+                    sensorValues[static_cast<uint16_t>(it->second)] = Value(point->value_int);
+                }
                 xSemaphoreGive(mutex);
             }
         }
@@ -114,6 +121,7 @@ void initMutex() {
 }
 
 void SensorData::RegisterBuffer(SensorDataBuffer *buff) {
+    assert(buffer == nullptr); // some other SensorData is already registered
     initMutex();
     if (xSemaphoreTake(mutex, (TickType_t)portMAX_DELAY) == pdTRUE) {
         buffer = buff;

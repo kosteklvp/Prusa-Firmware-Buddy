@@ -19,7 +19,6 @@
 #include <string.h>
 #include "netdev.h"
 
-#include "eeprom.h"
 #include "variant8.h"
 #include "netifapi.h"
 #include "ethernetif.h"
@@ -29,7 +28,6 @@
 #include "netif_settings.h"
 #include "wui_api.h"
 #include "espif.h"
-#include "otp.h"
 
 bool netdev_load_ini_to_eeprom() {
     ETH_config_t config[NETDEV_COUNT] = {};
@@ -51,7 +49,7 @@ bool netdev_load_ini_to_eeprom() {
 }
 
 bool netdev_load_esp_credentials_eeprom() {
-    ETH_config_t cnf = {};       // to store current config, to be able to set it back
+    ETH_config_t cnf = {}; // to store current config, to be able to set it back
     ETH_config_t cnf_dummy = {}; // just to read config from ini to something and discard it
     ap_entry_t ap = {};
     /*
@@ -59,13 +57,13 @@ bool netdev_load_esp_credentials_eeprom() {
      * left in the original form.
      */
     load_net_params(&cnf, &ap, NETDEV_ESP_ID);
-    if (load_ini_file_wifi(&cnf_dummy, &ap) != 1) { //cnf will be discarded
+    if (load_ini_file_wifi(&cnf_dummy, &ap) != 1) { // cnf will be discarded
         return false;
     }
 
     strncpy(cnf.hostname, cnf_dummy.hostname, sizeof(cnf.hostname));
     cnf.var_mask = ETHVAR_MSK(APVAR_PASS) + ETHVAR_MSK(APVAR_SSID) + ETHVAR_MSK(ETHVAR_LAN_FLAGS) + ETHVAR_MSK(ETHVAR_HOSTNAME);
-    cnf.lan.flag = cnf_dummy.lan.flag; //should be 0 == ON, DHCP, WIFI
+    cnf.lan.flag = cnf_dummy.lan.flag; // should be 0 == ON, DHCP, WIFI
 
     save_net_params(&cnf, &ap, NETDEV_ESP_ID);
 

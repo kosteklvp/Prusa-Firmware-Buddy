@@ -50,6 +50,8 @@ MEMORY
   CCMRAM (rw)     : ORIGIN = 0x10000000, LENGTH = 64K
 }
 
+EXTERN (_scanf_float) /* Require proper _scanf_float rather than a stub */
+
 /* Define output sections */
 SECTIONS
 {
@@ -133,6 +135,8 @@ SECTIONS
 
     *(.data)           /* .data sections */
     *(.data*)          /* .data* sections */
+    *(.RamFunc)        /* .RamFunc sections */
+    *(.RamFunc*)       /* .RamFunc* sections */
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */

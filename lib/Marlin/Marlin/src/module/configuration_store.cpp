@@ -59,7 +59,7 @@
 #endif
 
 #if ENABLED(USE_PRUSA_EEPROM_AS_SOURCE_OF_DEFAULT_VALUES)
-    #include "eeprom_function_api.h"
+    #include "config_store/store_c_api.h"
 #endif // USE_PRUSA_EEPROM_AS_SOURCE_OF_DEFAULT_VALUES
 
 #if EITHER(EEPROM_SETTINGS, SD_FIRMWARE_UPDATE)
@@ -381,7 +381,7 @@ void MarlinSettings::postprocess() {
   xyze_pos_t oldpos = current_position;
 
   // steps per s2 needs to be updated to agree with units per s2
-  planner.reset_acceleration_rates();
+  planner.refresh_acceleration_rates();
 
   // Make sure delta kinematics are updated before refreshing the
   // planner position so the stepper counts will be set correctly.
@@ -426,7 +426,7 @@ void MarlinSettings::postprocess() {
     planner.recalculate_max_e_jerk();
   #endif
 
-  // Refresh mm_per_step with the reciprocal of axis_steps_per_mm
+  // Refresh mm_per_step, mm_per_half_step and mm_per_mstep with the reciprocal of axis_steps_per_mm and axis_msteps_per_mm
   // and init stepper.count[], planner.position[] with current_position
   planner.refresh_positioning();
 
@@ -1325,6 +1325,7 @@ void MarlinSettings::postprocess() {
           const bool in = (i < esteppers + XYZ);
           planner.settings.max_acceleration_mm_per_s2[i] = in ? tmp1[i] : pgm_read_dword(&_DMA[ALIM(i, _DMA)]);
           planner.settings.axis_steps_per_mm[i]          = in ? tmp2[i] : get_steps_per_unit(i);
+          planner.settings.axis_msteps_per_mm[i]         = (in ? tmp2[i] : get_steps_per_unit(i)) * PLANNER_STEPS_MULTIPLIER;
           planner.settings.max_feedrate_mm_s[i]          = in ? tmp3[i] : pgm_read_float(&_DMF[ALIM(i, _DMF)]);
         }
 
@@ -2225,6 +2226,7 @@ void MarlinSettings::reset_motion() {
   LOOP_XYZE_N(i) {
     planner.settings.max_acceleration_mm_per_s2[i] = pgm_read_dword(&_DMA[ALIM(i, _DMA)]);
     planner.settings.axis_steps_per_mm[i]          = get_steps_per_unit(i);
+    planner.settings.axis_msteps_per_mm[i]         = get_steps_per_unit(i) * PLANNER_STEPS_MULTIPLIER;
     planner.settings.max_feedrate_mm_s[i]          = pgm_read_float(&_DMF[ALIM(i, _DMF)]);
   }
 
@@ -2460,6 +2462,14 @@ void MarlinSettings::reset() {
     thermalManager.temp_bed.pid.Kp = DEFAULT_bedKp;
     thermalManager.temp_bed.pid.Ki = scalePID_i(DEFAULT_bedKi);
     thermalManager.temp_bed.pid.Kd = scalePID_d(DEFAULT_bedKd);
+  #endif
+
+  #if ENABLED(PIDTEMPHEATBREAK)
+    HOTEND_LOOP() {
+      thermalManager.temp_heatbreak[e].pid.Kp = DEFAULT_heatbreakKp;
+      thermalManager.temp_heatbreak[e].pid.Ki = scalePID_i(DEFAULT_heatbreakKi);
+      thermalManager.temp_heatbreak[e].pid.Kd = scalePID_d(DEFAULT_heatbreakKd);
+    }
   #endif
 
   //

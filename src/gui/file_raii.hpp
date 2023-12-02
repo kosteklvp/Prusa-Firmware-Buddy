@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../common/gcode_filename.h"
+#include "../common/filename_type.hpp"
 #include <stdio.h>
 #include "dirent.h"
 #include <strings.h>
@@ -48,7 +48,7 @@ struct F_DIR_RAII_Iterator {
             return true; // all normal directories are accepted
         }
         // files are being filtered by their extension
-        return filename_is_gcode(fno->lfn);
+        return filename_is_printable(fno->lfn);
     }
 
     ~F_DIR_RAII_Iterator() {

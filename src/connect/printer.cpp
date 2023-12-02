@@ -5,6 +5,7 @@
 #include <cstring>
 
 using std::make_tuple;
+using std::optional;
 using std::tuple;
 
 namespace {
@@ -28,7 +29,7 @@ struct Crc {
     }
 };
 
-}
+} // namespace
 
 namespace connect_client {
 
@@ -55,7 +56,6 @@ uint32_t Printer::Params::telemetry_fingerprint(bool include_xy_axes) const {
         .add(int(pos[Printer::Z_AXIS_POS]))
         .add(print_speed)
         .add(flow_factor)
-        .add(job_id)
         // The RPM values are in thousands and fluctuating a bit, we don't want
         // that to trigger the send too often, only when it actually really
         // changes.
@@ -107,12 +107,36 @@ uint32_t Printer::info_fingerprint() const {
     update_net(Iface::Wifi);
 
     const auto creds = net_creds();
+    const auto &parameters = params();
 
     return crc
         .add_str(creds.ssid)
         .add_str(creds.pl_password)
-        .add(params().has_usb)
+        .add(parameters.has_usb)
+        .add(parameters.nozzle_diameter)
+        .add(parameters.version.type)
+        .add(parameters.version.version)
+        .add(parameters.version.subversion)
         .done();
 }
 
+Printer::Params::Params(const optional<BorrowPaths> &paths)
+    : paths(paths) {}
+
+const char *Printer::Params::job_path() const {
+    if (paths.has_value()) {
+        return paths->path();
+    } else {
+        return nullptr;
+    }
 }
+
+const char *Printer::Params::job_lfn() const {
+    if (paths.has_value()) {
+        return paths->name();
+    } else {
+        return nullptr;
+    }
+}
+
+} // namespace connect_client

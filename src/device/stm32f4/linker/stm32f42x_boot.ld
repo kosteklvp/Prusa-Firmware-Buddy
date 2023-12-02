@@ -50,6 +50,8 @@ MEMORY
   CCMRAM (rw)     : ORIGIN = 0x10000000, LENGTH = 64K
 }
 
+EXTERN (_scanf_float) /* Require proper _scanf_float rather than a stub */
+
 /* Define output sections */
 SECTIONS
 {
@@ -85,13 +87,6 @@ SECTIONS
     *(.rodata)         /* .rodata sections (constants, strings, etc.) */
     *(.rodata*)        /* .rodata* sections (constants, strings, etc.) */
     . = ALIGN(4);
-  } >FLASH
-
-  .ARM.extab   : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >FLASH
-  .ARM : {
-    __exidx_start = .;
-    *(.ARM.exidx*)
-    __exidx_end = .;
   } >FLASH
 
   .preinit_array     :
@@ -140,6 +135,8 @@ SECTIONS
 
     *(.data)           /* .data sections */
     *(.data*)          /* .data* sections */
+    *(.RamFunc)        /* .RamFunc sections */
+    *(.RamFunc*)       /* .RamFunc* sections */
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
@@ -153,7 +150,7 @@ SECTIONS
   * If initialized variables will be placed in this section,
   * the startup code needs to be modified to copy the init-values.
   */
-  .ccmram :
+  .ccmram (NOLOAD) :
   {
     . = ALIGN(4);
     _sccmram = .;       /* create a global symbol at ccmram start */
@@ -163,7 +160,7 @@ SECTIONS
 
     . = ALIGN(4);
     _eccmram = .;       /* create a global symbol at ccmram end */
-  } >CCMRAM AT> FLASH
+  } >CCMRAM
 
   /* Uninitialized data section */
   . = ALIGN(4);
@@ -208,6 +205,8 @@ SECTIONS
     libc.a ( * )
     libm.a ( * )
     libgcc.a ( * )
+    *(.ARM.exidx*)
+    *(.ARM.extab* .gnu.linkonce.armextab.*)
   }
 
   .ARM.attributes 0 : { *(.ARM.attributes) }

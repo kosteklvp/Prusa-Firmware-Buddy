@@ -64,6 +64,11 @@ enum class ContentType {
     ApplicationOctetStream,
 };
 
+enum class ContentEncryptionMode {
+    AES_CBC,
+    AES_CTR,
+};
+
 constexpr const char *to_str(ContentType content_type) {
     switch (content_type) {
     case ContentType::TextPlain:
@@ -103,7 +108,9 @@ enum Status {
     UnknownStatus = 0,
     Ok = 200,
     Created = 201,
+    Accepted = 202,
     NoContent = 204,
+    PartialContent = 206,
     NotModified = 304,
     BadRequest = 400,
     Unauthorized = 401,
@@ -127,13 +134,18 @@ enum Status {
     InsufficientStorage = 507,
 };
 
+enum class APIVersion {
+    Octoprint,
+    v1
+};
+
 // TODO: Replace stringy URLs with tokens/enums.
 // Note: The same buffer is also reused for the boundary. We can do that because:
 // * We need the boundary only for short URLs.
 // * The URL must come first, so we know how much space there's after that.
 //
 // That saves quite some space compared with having two buffers.
-static const size_t MAX_URL_LEN = 100;
+static const size_t MAX_URL_LEN = 168;
 using Url = std::array<char, MAX_URL_LEN>;
 
 // # of seconds after which nonce becomes stale for digest authentication
@@ -144,4 +156,4 @@ using Url = std::array<char, MAX_URL_LEN>;
 static const uint32_t valid_nonce_period = 5;
 static const uint32_t extended_valid_nonce_period = 8;
 
-}
+} // namespace http

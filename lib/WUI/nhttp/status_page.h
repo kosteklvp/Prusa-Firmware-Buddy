@@ -33,6 +33,7 @@ protected:
     http::Status status;
     CloseHandling close_handling;
     bool json_content;
+    std::optional<uint32_t> etag = std::nullopt;
 
     // Note: This exists only so we can reuse the exact same code also for UnauthenticatedStatusPage, the only diffrerence
     // is we add the correct Authentication header into extra_hdrs.
@@ -40,7 +41,8 @@ protected:
 
 public:
     StatusPage(http::Status status, const RequestParser &parser, const char *extra_content = "");
-    StatusPage(http::Status status, CloseHandling close_handling, bool json_content, const char *extra_content = "");
+    StatusPage(http::Status status, CloseHandling close_handling, bool json_content, std::optional<uint32_t> etag = std::nullopt, const char *extra_content = "");
+    virtual ~StatusPage() = default;
 
     bool want_read() const { return false; }
     bool want_write() const { return true; }
@@ -65,4 +67,4 @@ public:
     Step step(std::string_view input, bool terminated_by_client, uint8_t *output, size_t output_size) override;
 };
 
-}
+} // namespace nhttp::handler

@@ -5,10 +5,13 @@ target_sources(
   INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/http_req_automaton.cpp
             espif.cpp
             ethernetif.c
+            ethernetif.cpp
             http_lifetime.cpp
             link_content/basic_gets.cpp
             link_content/previews.cpp
-            link_content/prusa_link_api.cpp
+            link_content/prusa_api_helpers.cpp
+            link_content/prusa_link_api_octo.cpp
+            link_content/prusa_link_api_v1.cpp
             link_content/static_file.cpp
             link_content/usb_files.cpp
             netdev.c
@@ -25,17 +28,31 @@ target_sources(
             nhttp/multipart_parser.c
             nhttp/req_parser.cpp
             nhttp/send_file.cpp
+            nhttp/send_json.cpp
             nhttp/server.cpp
-            nhttp/stateless_json.cpp
+            nhttp/splice.cpp
             nhttp/static_mem.cpp
             nhttp/status_page.cpp
+            nhttp/status_renderer.cpp
+            nhttp/transfer_renderer.cpp
             nhttp/upload_state.cpp
-            random.cpp
+            pbuf_rx.c
             sntp/sntp.c
             sntp/sntp_client.c
             wui.cpp
             wui_api.cpp
   )
+
+if(HAS_EMBEDDED_ESP32)
+  target_sources(WUI INTERFACE esp_flash.cpp)
+endif()
+
+if(NETWORKING_BENCHMARK_ENABLED)
+  target_sources(
+    WUI INTERFACE nhttp/networking_benchmark.cpp nhttp/networking_benchmark_selector.cpp
+    )
+  target_compile_definitions(WUI INTERFACE NETWORKING_BENCHMARK_ENABLED)
+endif()
 
 file(GLOB AUTOMATA_GENERATORS ${PROJECT_ROOT_DIR}/utils/gen-automata/*.py)
 

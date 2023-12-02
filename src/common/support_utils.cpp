@@ -2,7 +2,7 @@
 #include <cassert>
 
 #include "config.h"
-#include "otp.h"
+#include "otp.hpp"
 #include "sys.h"
 #include "shared_config.h"
 #include "support_utils.h"
@@ -16,13 +16,11 @@
 
 #include "qrcodegen.h"
 #include "support_utils_lib.hpp"
+#include "data_exchange.hpp"
 
 #include <option/bootloader.h>
 
-static constexpr char INFO_URL_LONG_PREFIX[] = "HTTPS://HELP.PRUSA3D.COM";
-static constexpr char ERROR_URL_LONG_PREFIX[] = "HTTPS://HELP.PRUSA3D.COM";
-static constexpr char ERROR_URL_SHORT_PREFIX[] = "help.prusa3d.com";
-static constexpr char SERIAL_PREFIX[] = "CZPX";
+static constexpr char ERROR_URL_PREFIX[] = "https://prusa.io";
 
 /// FIXME same code in support_utils_lib
 /// but linker cannot find it
@@ -31,32 +29,35 @@ char *eofstr(char *str) {
 }
 
 void append_crc(char *str, const uint32_t str_size) {
-    uint32_t crc = crc32_calc((uint8_t *)(str + sizeof(ERROR_URL_LONG_PREFIX) - 1), strlen(str) - sizeof(ERROR_URL_LONG_PREFIX) + 1);
+    uint32_t crc = crc32_calc((uint8_t *)(str + sizeof(ERROR_URL_PREFIX) - 1), strlen(str) - sizeof(ERROR_URL_PREFIX) + 1);
     snprintf(eofstr(str), str_size - strlen(str), "/%08lX", crc);
 }
 
 void printerHash(char *str, size_t size, bool state_prefix) {
-    const size_t prefix_len = strlen(SERIAL_PREFIX);
-    constexpr uint8_t SNSize = prefix_len + OTP_SERIAL_NUMBER_SIZE - 1; // + fixed header, - trailing 0
-    constexpr uint8_t bufferSize = OTP_STM32_UUID_SIZE + OTP_MAC_ADDRESS_SIZE + SNSize;
+    serial_nr_t serial_nr;
+    const uint8_t serial_nr_len = otp_get_serial_nr(serial_nr);
+
+    constexpr uint8_t bufferSize = sizeof(STM32_UUID) + sizeof(otp_get_mac_address()->mac) + sizeof(serial_nr);
     uint8_t toHash[bufferSize];
     /// CPU ID
-    memcpy(toHash, (char *)OTP_STM32_UUID_ADDR, OTP_STM32_UUID_SIZE);
+    memcpy(toHash, otp_get_STM32_UUID(), sizeof(STM32_UUID));
+    // snprintf((char *)toHash, buffer, "/%08lX%08lX%08lX", *(uint32_t *)(OTP_STM32_UUID_ADDR), *(uint32_t *)(OTP_STM32_UUID_ADDR + sizeof(uint32_t)), *(uint32_t *)(OTP_STM32_UUID_ADDR + 2 * sizeof(uint32_t)));
     /// MAC
-    memcpy(&toHash[OTP_STM32_UUID_SIZE], (char *)OTP_MAC_ADDRESS_ADDR, OTP_MAC_ADDRESS_SIZE);
+    memcpy(&toHash[sizeof(STM32_UUID)], otp_get_mac_address()->mac, sizeof(otp_get_mac_address()->mac));
     /// SN
-    memcpy(&toHash[OTP_STM32_UUID_SIZE + OTP_MAC_ADDRESS_SIZE], SERIAL_PREFIX, prefix_len);
-    memcpy(&toHash[OTP_STM32_UUID_SIZE + OTP_MAC_ADDRESS_SIZE + prefix_len], (char *)OTP_SERIAL_NUMBER_ADDR, SNSize - prefix_len);
+    memcpy(&toHash[sizeof(STM32_UUID) + sizeof(otp_get_mac_address()->mac)], serial_nr.begin(), serial_nr_len);
 
     uint32_t hash[8] = { 0, 0, 0, 0, 0, 0, 0, 0 }; /// 256 bits
     /// get hash;
-    mbedtls_sha256_ret(toHash, sizeof(toHash), (unsigned char *)hash, false);
+    const size_t hash_len = sizeof(STM32_UUID) + sizeof(otp_get_mac_address()->mac) + serial_nr_len;
+    mbedtls_sha256_ret(toHash, hash_len, (unsigned char *)hash, false);
 
     if (state_prefix) {
         /// shift hash by 2 bits
         hash[7] >>= 2;
-        for (int i = 6; i >= 0; --i)
+        for (int i = 6; i >= 0; --i) {
             rShift2Bits(hash[i], hash[i + 1]);
+        }
 
         /// set signature state
         if (signature_exist()) {
@@ -67,7 +68,7 @@ void printerHash(char *str, size_t size, bool state_prefix) {
         /// appendix state
         if (appendix_exist()) {
             setBit((uint8_t *)hash, 6);
-            //setBit(str[0], 6);
+            // setBit(str[0], 6);
         }
     }
 
@@ -92,9 +93,9 @@ void addLanguage(char *str, const uint32_t str_size) {
     const uint16_t langNum = LangEEPROM::getInstance().getLanguage();
     uint16_t *langP = (uint16_t *)lang;
     *langP = langNum;
-    //uint16_t *(lang) = langNum;
-    //lang[0] = langNum / 256;
-    //lang[1] = langNum % 256;
+    // uint16_t *(lang) = langNum;
+    // lang[0] = langNum / 256;
+    // lang[1] = langNum % 256;
     lang[2] = '\0';
     snprintf(eofstr(str), str_size - strlen(str), "/%s", lang);
 }
@@ -103,34 +104,37 @@ void error_url_long(char *str, const uint32_t str_size, const int error_code) {
     /// FIXME remove eofstr & strlen
 
     /// fixed prefix
-    strlcpy(str, ERROR_URL_LONG_PREFIX, str_size);
+    strlcpy(str, ERROR_URL_PREFIX, str_size);
 
-    addLanguage(str, str_size);
+    // Website prusa.io doesn't require language specification
 
     /// error code
-    snprintf(eofstr(str), str_size - strlen(str), "/%d", error_code);
+    snprintf(eofstr(str), str_size - strlen(str), "/%05d", error_code);
 
     /// printer code
     snprintf(eofstr(str), str_size - strlen(str), "/");
-    if (str_size - strlen(str) > 8)
+    if (str_size - strlen(str) > 8) {
         printerCode(eofstr(str));
+    }
 
     /// FW version
-    snprintf(eofstr(str), str_size - strlen(str), "/%d", eeprom_get_ui16(EEVAR_FW_VERSION));
+    char version_buffer[8] {};
+    fill_project_version_no_dots(version_buffer, sizeof(version_buffer));
+    snprintf(eofstr(str), str_size - strlen(str), "/%s", version_buffer);
 
-    //snprintf(eofstr(str), str_size - strlen(str), "/%08lX%08lX%08lX", *(uint32_t *)(OTP_STM32_UUID_ADDR), *(uint32_t *)(OTP_STM32_UUID_ADDR + sizeof(uint32_t)), *(uint32_t *)(OTP_STM32_UUID_ADDR + 2 * sizeof(uint32_t)));
-    //snprintf(eofstr(str), str_size - strlen(str), "/%s", ((ram_data_exchange.model_specific_flags && APPENDIX_FLAG_MASK) ? "U" : "L"));
-    //append_crc(str, str_size);
+    // snprintf(eofstr(str), str_size - strlen(str), "/%08lX%08lX%08lX", *(uint32_t *)(OTP_STM32_UUID_ADDR), *(uint32_t *)(OTP_STM32_UUID_ADDR + sizeof(uint32_t)), *(uint32_t *)(OTP_STM32_UUID_ADDR + 2 * sizeof(uint32_t)));
+    // snprintf(eofstr(str), str_size - strlen(str), "/%s", ((ram_data_exchange.model_specific_flags && APPENDIX_FLAG_MASK) ? "U" : "L"));
+    // append_crc(str, str_size);
 }
 
 void error_url_short(char *str, const uint32_t str_size, const int error_code) {
     /// help....com/
-    strlcpy(str, ERROR_URL_SHORT_PREFIX, str_size);
+    strlcpy(str, ERROR_URL_PREFIX, str_size);
 
-    addLanguage(str, str_size);
+    // Website prusa.io doesn't require language specification
 
     /// /12201
-    snprintf(eofstr(str), str_size - strlen(str), "/%d", error_code);
+    snprintf(eofstr(str), str_size - strlen(str), "/%05d", error_code);
 }
 
 bool appendix_exist() {
@@ -138,7 +142,7 @@ bool appendix_exist() {
 #if BOOTLOADER()
     const version_t *bootloader = (const version_t *)BOOTLOADER_VERSION_ADDRESS;
     if (bootloader->major >= 1 && bootloader->minor >= 1) {
-        return !(ram_data_exchange.model_specific_flags & APPENDIX_FLAG_MASK);
+        return !(data_exchange::has_apendix());
     }
 #endif
 
@@ -169,7 +173,8 @@ bool appendix_exist() {
 
 bool signature_exist() {
     const version_t *bootloader = (const version_t *)BOOTLOADER_VERSION_ADDRESS;
-    if (bootloader->major >= 1 && bootloader->minor >= 2)
-        return ram_data_exchange.fw_signature;
+    if (bootloader->major >= 1 && bootloader->minor >= 2) {
+        return data_exchange::has_fw_signature();
+    }
     return false;
 }

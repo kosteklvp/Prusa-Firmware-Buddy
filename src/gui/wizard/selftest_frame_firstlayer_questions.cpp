@@ -18,14 +18,14 @@ SelftestFrameFirstLayerQuestions::SelftestFrameFirstLayerQuestions(window_t *par
     , footer(this
 #if defined(FOOTER_HAS_LIVE_Z)
           ,
-          footer::items::ItemLiveZ
+          footer::Item::live_z
 #endif
 #if defined(FOOTER_HAS_SHEETS)
           ,
-          footer::items::ItemSheets
+          footer::Item::sheets
 #endif
           ,
-          footer::items::ItemFilament)
+          footer::Item::filament)
     , text(this, ChangeableRect, is_multiline::yes) {
 
     change();
@@ -36,7 +36,7 @@ void SelftestFrameFirstLayerQuestions::change() {
 
     const char *txt = nullptr;
 
-    //texts
+    // texts
     switch (phase_current) {
     case PhasesSelftest::FirstLayer_filament_known_and_not_unsensed:
         txt = N_("To calibrate with currently loaded filament, press NEXT. To change filament, press UNLOAD.");

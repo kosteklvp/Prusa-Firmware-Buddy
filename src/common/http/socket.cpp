@@ -3,6 +3,7 @@
 #include <optional>
 
 #if defined(__unix__) || defined(__APPLE__) || defined(__WIN32__)
+// TODO: Clean up this hack for unit test sake...
     #include <sys/types.h>
     #include <sys/socket.h>
     #include <netinet/in.h>
@@ -12,6 +13,18 @@
     #include <stdlib.h>
     #include <string.h>
     #include <unistd.h>
+    #include <poll.h>
+
+    #define lwip_close        close
+    #define lwip_connect      connect
+    #define lwip_freeaddrinfo freeaddrinfo
+    #define lwip_getaddrinfo  getaddrinfo
+    #define lwip_poll         poll
+    #define lwip_recv         recv
+    #define lwip_send         send
+    #define lwip_setsockopt   setsockopt
+    #define lwip_shutdown     shutdown
+    #define lwip_socket       socket
 #else
     #include "sockets.h"
     #include "lwip/inet.h"
@@ -19,6 +32,7 @@
 #endif
 #undef log_debug
 #define log_debug(...)
+#include <log.h>
 
 #include <memory>
 
@@ -31,11 +45,11 @@ namespace {
 class AddrDeleter {
 public:
     void operator()(addrinfo *addr) {
-        freeaddrinfo(addr);
+        lwip_freeaddrinfo(addr);
     }
 };
 
-}
+} // namespace
 
 namespace http {
 
@@ -43,7 +57,7 @@ socket_con::socket_con(uint8_t timeout_s)
     : Connection(timeout_s) {
     fd = -1;
     connected = false;
-    if ((fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+    if ((fd = lwip_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
         log_debug(socket, "%s", "socket creation failed\n");
     }
     log_debug(socket, "socket created with fd: %d\n", fd);
@@ -53,25 +67,19 @@ socket_con::~socket_con() {
     log_debug(socket, "socket destructor called: %d\n", fd);
     if (-1 != fd) {
         log_debug(socket, "shutting down socket: %d\n", fd);
-        ::shutdown(fd, SHUT_RDWR);
-        ::close(fd);
+        lwip_close(fd);
     }
 }
 
 std::optional<Error> socket_con::connection(const char *host, uint16_t port) {
 
     const struct timeval timeout = { get_timeout_s(), 0 };
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == -1) {
+    if (lwip_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == -1) {
         return Error::SetSockOpt;
     }
-    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) == -1) {
+    if (lwip_setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) == -1) {
         return Error::SetSockOpt;
     }
-    /*
-    if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, NULL, 0) == -1) {
-        return Error::SetSockOpt;
-    }
-    */
 
     int error;
     struct addrinfo hints;
@@ -87,7 +95,7 @@ std::optional<Error> socket_con::connection(const char *host, uint16_t port) {
     char port_as_str[str_len] = {};
     snprintf(port_as_str, str_len, "%hu", port);
 
-    if (getaddrinfo(host, port_as_str, &hints, &cur) != 0) {
+    if (lwip_getaddrinfo(host, port_as_str, &hints, &cur) != 0) {
         return Error::Dns;
     }
 
@@ -95,7 +103,7 @@ std::optional<Error> socket_con::connection(const char *host, uint16_t port) {
 
     for (cur = addr_list.get(); cur != NULL; cur = cur->ai_next) {
         if (AF_INET == cur->ai_family) {
-            error = ::connect(fd, cur->ai_addr, cur->ai_addrlen);
+            error = lwip_connect(fd, cur->ai_addr, cur->ai_addrlen);
             if (0 == error) {
                 connected = true;
                 break;
@@ -103,22 +111,28 @@ std::optional<Error> socket_con::connection(const char *host, uint16_t port) {
         }
     }
 
-    if (!connected)
+    if (!connected) {
         return Error::Connect;
-    else
+    } else {
         return std::nullopt;
+    }
 }
 
 std::variant<size_t, Error> socket_con::tx(const uint8_t *send_buffer, size_t data_len) {
-    if (!connected)
+    if (!connected) {
         return Error::InternalError;
+    }
 
     size_t bytes_sent = 0;
 
-    int status = ::write(fd, (const unsigned char *)send_buffer, data_len);
+    int status = lwip_send(fd, (const unsigned char *)send_buffer, data_len, 0);
 
     if (status < 0) {
-        return Error::Network;
+        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+            return Error::Timeout;
+        } else {
+            return Error::Network;
+        }
     }
 
     bytes_sent = (size_t)status;
@@ -127,16 +141,22 @@ std::variant<size_t, Error> socket_con::tx(const uint8_t *send_buffer, size_t da
     return bytes_sent;
 }
 
-std::variant<size_t, Error> socket_con::rx(uint8_t *read_buffer, size_t buffer_len) {
-    if (!connected)
+std::variant<size_t, Error> socket_con::rx(uint8_t *read_buffer, size_t buffer_len, bool nonblock) {
+    if (!connected) {
         return Error::InternalError;
+    }
 
     size_t bytes_received = 0;
 
-    int status = ::read(fd, (unsigned char *)read_buffer, buffer_len);
+    int flags = nonblock ? MSG_DONTWAIT : 0;
+    int status = lwip_recv(fd, (unsigned char *)read_buffer, buffer_len, flags);
 
     if (status < 0) {
-        return Error::Network;
+        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+            return Error::Timeout;
+        } else {
+            return Error::Network;
+        }
     }
 
     bytes_received = (size_t)status;
@@ -144,4 +164,15 @@ std::variant<size_t, Error> socket_con::rx(uint8_t *read_buffer, size_t buffer_l
     return bytes_received;
 }
 
+bool socket_con::poll_readable(uint32_t timeout) {
+    pollfd descriptor = {};
+    descriptor.fd = fd;
+    descriptor.events = POLLIN;
+    if (lwip_poll(&descriptor, 1, timeout) == 1) {
+        return descriptor.revents & POLLIN;
+    } else {
+        return false;
+    }
 }
+
+} // namespace http

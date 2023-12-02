@@ -12,8 +12,9 @@ FooterText::FooterText(window_t *parent, Rect16::Left_t left, string_view_utf8 t
     : AddSuperWindow<WindowBlinkingText>(
         parent,
         [parent, left] {
-            if (!parent)
-                return Rect16(); //does not have parrent, cannot calculate rect
+            if (!parent) {
+                return Rect16(); // does not have parrent, cannot calculate rect
+            }
 
             size_ui16_t sz = parent->GetRect().Size();
             point_i16_t pt = { left, int16_t(std::max((sz.h - GuiDefaults::FooterFont->h) / 2, 0)) };
@@ -22,5 +23,5 @@ FooterText::FooterText(window_t *parent, Rect16::Left_t left, string_view_utf8 t
             return Rect16(pt, sz);
         }(),
         txt) {
-    font = GuiDefaults::FooterFont;
+    set_font(GuiDefaults::FooterFont);
 }

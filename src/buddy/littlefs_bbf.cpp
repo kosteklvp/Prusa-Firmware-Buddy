@@ -6,8 +6,8 @@
 
 #include "bbf.hpp"
 #include "log.h"
-#include "scratch_buffer.hpp"
 #include "bsod.h"
+#include "bsod_gui.hpp"
 
 LOG_COMPONENT_REF(FileSystem);
 
@@ -23,18 +23,38 @@ struct LruCache {
         uint8_t data[];
     };
 
-    int block_size;
-    int used_space;
+    size_t block_size;
+    size_t used_space;
     Slot *head;
-    uint8_t *buffer;
-    int buffer_size;
 
-    LruCache(uint8_t *buffer, int buffer_size, int block_size)
+    /**
+     * @brief Size of the cache buffer in bytes.
+     * @note Smaller cache means longer bbf installing from USB and almost unusable installing over debugger.
+     *  USB installing times:
+     *    12 blocks - 30 seconds
+     *    10 blocks - 36 seconds
+     *     8 blocks - 47 seconds
+     *     6 blocks - 1 minute
+     *     4 blocks - 1 minute 7 seconds
+     *     2 blocks - 1 minute 7 seconds
+     */
+#if PRINTER_IS_PRUSA_MINI
+    static constexpr size_t CACHE_SIZE = 4 * (4096 + sizeof(LruCache::Slot)); // Mini doesn't have enough RAM, sorry mini
+#else
+    static constexpr size_t CACHE_SIZE = 12 * (4096 + sizeof(LruCache::Slot)); // Optimized for bbf with 4096 B blocks
+#endif
+
+    uint8_t *buffer; ///< Dynamically allocated space for block cache
+
+    LruCache(size_t block_size)
         : block_size(block_size)
         , used_space(0)
-        , head(nullptr)
-        , buffer(buffer)
-        , buffer_size(buffer_size) {
+        , head(nullptr) {
+        buffer = new uint8_t[CACHE_SIZE];
+    }
+
+    virtual ~LruCache() {
+        delete[] buffer;
     }
 
     int slot_alloc_size() {
@@ -43,13 +63,13 @@ struct LruCache {
 
     Slot &alloc() {
         Slot *slot;
-        if (used_space + slot_alloc_size() < buffer_size) {
+        if (used_space + slot_alloc_size() < CACHE_SIZE) {
             slot = reinterpret_cast<Slot *>(buffer + used_space);
             used_space += slot_alloc_size();
         } else {
             Slot *current = head;
             if (current == nullptr) {
-                fatal_error("could not allocate any block", "littlebbf");
+                fatal_error(ErrCode::ERR_SYSTEM_BBF_ALLOCATION_FAILED);
             }
             while (current->next) {
                 current = current->next;
@@ -104,13 +124,13 @@ struct LruCache {
     }
 };
 
-typedef struct {
+struct bbf_lfs_context_t {
     struct lfs_config littlefs_config;
     FILE *bbf;
     long data_offset;
-    std::optional<buddy::scratch_buffer::Ownership> scratch_buffer;
+
     std::optional<LruCache> block_cache;
-} bbf_lfs_context_t;
+};
 
 static bbf_lfs_context_t bbf_context;
 
@@ -125,7 +145,7 @@ static int _read(const struct lfs_config *c, lfs_block_t block,
     LruCache &cache = bbf_context.block_cache.value();
 
     if (bbf_context.block_cache.has_value() == false) {
-        fatal_error("init failed", "littlebbf");
+        fatal_error(ErrCode::ERR_SYSTEM_BBF_INIT_FAILED);
     }
 
     LruCache::Slot *slot;
@@ -192,9 +212,13 @@ lfs_t *littlefs_bbf_init(FILE *bbf, uint8_t bbf_tlv_entry) {
 
     bbf_context.bbf = bbf;
     bbf_context.data_offset = offset;
-    bbf_context.scratch_buffer.emplace();
-    bbf_context.scratch_buffer->acquire(/*wait=*/true);
-    bbf_context.block_cache.emplace(bbf_context.scratch_buffer->get().buffer, bbf_context.scratch_buffer->get().size(), block_size);
+
+    /**
+     * @note Allocating large amount of memory.
+     *   Smaller cache increases time of installing from USB and makes installing over debugger unusable.
+     *   This happens only before proper startup, so it shouldn't be a problem.
+     */
+    bbf_context.block_cache.emplace(block_size);
 
     struct lfs_config &littlefs_config = bbf_context.littlefs_config;
     memset(&littlefs_config, 0, sizeof(littlefs_config));
@@ -226,7 +250,8 @@ struct lfs_config *littlefs_internal_config_get() {
 }
 
 void littlefs_bbf_deinit(lfs_t *lfs) {
+    // Free a large chunk of heap by destroying LRU cache
     bbf_context.block_cache = std::nullopt;
-    bbf_context.scratch_buffer->release();
+
     lfs_unmount(lfs);
 }

@@ -1,9 +1,14 @@
 #pragma once
 
-#include "buffer.hpp"
 #include "changes.hpp"
 #include "command.hpp"
-#include "printer.hpp"
+#include "sleep.hpp"
+
+#include <common/shared_buffer.hpp>
+#include <transfers/monitor.hpp>
+#include <transfers/download.hpp>
+#include <transfers/changed_path.hpp>
+#include <transfers/transfer.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -11,14 +16,7 @@
 
 namespace connect_client {
 
-// Just make the code a bit more readable by making this distinction.
-// Unfortunately, not checked at compile time.
-using Timestamp = uint32_t;
-using Duration = uint32_t;
-
-struct Sleep {
-    Duration milliseconds;
-};
+class Printer;
 
 struct SendTelemetry {
     bool empty;
@@ -28,31 +26,39 @@ enum class EventType {
     Info,
     JobInfo,
     FileInfo,
+    FileChanged,
+    TransferInfo,
     Rejected,
     Accepted,
     Finished,
     Failed,
+    TransferStopped,
+    TransferAborted,
+    TransferFinished,
 };
 
 const char *to_str(EventType event);
 
 struct Event {
     EventType type;
-    std::optional<CommandId> command_id;
-    std::optional<uint16_t> job_id;
-    std::optional<SharedPath> path;
+    std::optional<CommandId> command_id { std::nullopt };
+    std::optional<uint16_t> job_id { std::nullopt };
+    std::optional<SharedPath> path { std::nullopt };
+    std::optional<transfers::TransferId> transfer_id { std::nullopt };
     /// Reason for the event. May be null.
     ///
     /// Reasons are constant strings, therefore the non-owned const char * ‒
     /// they are not supposed to get "constructed" or interpolated.
     const char *reason = nullptr;
-    bool info_rescan_files = false;
+    bool is_file = false;
+    transfers::ChangedPath::Incident incident {};
+    std::optional<CommandId> start_cmd_id { std::nullopt };
 };
 
 using Action = std::variant<
-    Sleep,
     SendTelemetry,
-    Event>;
+    Event,
+    Sleep>;
 
 enum class ActionResult {
     Ok,
@@ -71,16 +77,14 @@ enum class ActionResult {
 /// similar after something bad happens.
 class Planner {
 private:
-    struct BackgroundGcode {
-        // Stored without \0 at the back.
-        SharedBorrow data;
-        size_t size;
-        size_t position;
-    };
-
     struct BackgroundCommand {
         CommandId id;
-        std::variant<BackgroundGcode> command;
+        BackgroundCmd command;
+    };
+
+    enum class TransferRecoveryState {
+        WaitingForUSB,
+        Finished,
     };
 
     Printer &printer;
@@ -123,36 +127,45 @@ private:
     void command(const Command &, const SendInfo &);
     void command(const Command &, const SendJobInfo &);
     void command(const Command &, const SendFileInfo &);
+    void command(const Command &, const SendTransferInfo &);
     void command(const Command &, const PausePrint &);
     void command(const Command &, const ResumePrint &);
     void command(const Command &, const StopPrint &);
     void command(const Command &, const StartPrint &);
     void command(const Command &, const CancelPrinterReady &);
     void command(const Command &, const SetPrinterReady &);
-
-    // Try to perform some background work, if any is available.
-    //
-    // Will run at most for time_limit and return the time it actually took
-    // (yes, it will never be larger than that, you can rely on it).
-    //
-    // Note that due to technical reasons, it can take a bit longer, but the
-    // return value is still capped at the time_limit value to avoid underflows
-    // when handling.
-    Duration background_processing(Duration time_limit);
-
-    enum class BackgroundResult {
-        Success,
-        Failure,
-        More,
-        Later,
-    };
-
-    BackgroundResult background_task(BackgroundGcode &);
+    void command(const Command &, const StartEncryptedDownload &);
+    void command(const Command &, const DeleteFile &);
+    void command(const Command &, const DeleteFolder &);
+    void command(const Command &, const CreateFolder &);
+    void command(const Command &, const StopTransfer &);
 
     // Tracking if we should resend the INFO message due to some changes.
     Tracked info_changes;
-    // Tracking if we should ask for rescan of our files.
-    Tracked file_changes;
+    // Tracking of ongoing transfers.
+    std::optional<transfers::TransferId> observed_transfer;
+
+    // Tracks recovery of a transfer after startup.
+    // We should not start any other transfer until the recovery is Finished.
+    TransferRecoveryState transfer_recovery;
+
+    // Set to true every time a transfer is observed. Also on startup (there
+    // might be a leftover from before boot).
+    //
+    // Used to prevent cleaning up all the time.
+    bool need_transfer_cleanup = true;
+
+    // A transfer running in background.
+    //
+    // As we may have a background _task_ and a transfer at the same time, we
+    // need to have variables for both.
+    std::optional<transfers::Transfer> transfer;
+
+    std::optional<CommandId> transfer_start_cmd = std::nullopt;
+    std::optional<CommandId> print_start_cmd = std::nullopt;
+
+    /// Constructs corresponding Sleep action.
+    Sleep sleep(Duration duration, bool cooldown);
 
 public:
     Planner(Printer &printer)
@@ -177,12 +190,24 @@ public:
     /// arrives, it might interact sooner).
     ///
     /// All actions except sleeps expect a follow-up call to action_done.
-    Action next_action();
+    Action next_action(SharedBuffer &buffer);
+    /// Will we need the paths extracted from the current job?
+    bool wants_job_paths() const;
     // Note: *Not* for Sleep. Only for stuff that sends.
     void action_done(ActionResult action);
+
+    // Only for Success/Failure.
+    void background_done(BackgroundResult result);
+    void download_done(transfers::Transfer::State result);
+
+    /// Called by sleep when it successfully decides whether there is a transfer
+    /// to be recovered or not.
+    void transfer_recovery_finished(std::optional<const char *> transfer_destination_path);
+
+    void transfer_cleanup_finished(bool success);
 
     // ID of a command being executed in the background, if any.
     std::optional<CommandId> background_command_id() const;
 };
 
-}
+} // namespace connect_client

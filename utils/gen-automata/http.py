@@ -220,11 +220,16 @@ def keyworded_header(keywords, entry_name=None):
         kw_start = auto.add_state()
         kw_start.mark_enter()
         start.add_transition(kw[0], LabelType.CharNoCase, kw_start)
-        kw_start.set_path(kw[1:], nocase=True)  # Will lead to the next state
-        end = auto.add_state(keywords[kw])
-        end.mark_enter()
-        terminals.append(kw_start)
-        terminals.append(end)
+        if len(kw) > 1:
+            kw_start.set_path(kw[1:],
+                              nocase=True)  # Will lead to the next state
+            end = auto.add_state(keywords[kw])
+            end.mark_enter()
+            terminals.append(kw_start)
+            terminals.append(end)
+        else:
+            kw_start.set_name(keywords[kw])
+            terminals.append(kw_start)
 
     # Now handle all the rest by a header-parsing automaton that doesn't emit
     # any events.
@@ -270,15 +275,49 @@ def accept_header():
     })
 
 
+def content_encryption_mode_header():
+    """
+    Content encryption mode decoder.
+    """
+    encryption_modes = {
+        'AES-CBC': 'ContentEncryptionModeCBC',
+        'AES-CTR': 'ContentEncryptionModeCTR',
+    }
+    tr, terminals, add_unknowns = trie(encryption_modes)
+    for t in terminals:
+        terminals[t].mark_enter()
+        terminals[t].set_name(encryption_modes[t])
+    # Eat spaces before the content type
+    start = tr.start()
+    start.loop('HorizWhitespace', LabelType.Special)
+
+    # Now handle all the rest by a header-parsing automaton that doesn't emit
+    # any events.
+    other, other_end, _ = read_header_value(None)
+    fallback = other.start()
+    tr.join_transition(start, other, fallthrough=True)
+    for unknown in add_unknowns:
+        unknown.add_fallback(fallback, fallthrough=True)
+    return tr, other_end, True
+
+
 def print_after_upload_header():
     return keyworded_header({
         'true': 'PrintAfterUpload',
+        '1': 'PrintAfterUploadNumeric',
+        '?1': 'PrintAfterUploadRFC',
     })
 
 
 def overwrite_file_header():
     return keyworded_header({
         '?1': 'OverwriteFile',
+    })
+
+
+def create_folder_header():
+    return keyworded_header({
+        '?1': 'CreateFolder',
     })
 
 

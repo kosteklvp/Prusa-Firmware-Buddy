@@ -1,12 +1,14 @@
 #pragma once
-#include "marlin_client.h"
-#include "eeprom.h"
+#include "marlin_client.hpp"
 #include <optional>
+
+#include "gui_config_printer.hpp"
+#include "common/sheet.hpp"
 
 class SteelSheets {
 public:
-    static constexpr float zOffsetMin = -2.0F;
-    static constexpr float zOffsetMax = 0.0F;
+    static constexpr float zOffsetMin = Z_OFFSET_MIN;
+    static constexpr float zOffsetMax = Z_OFFSET_MAX;
 
     ///////////////////////////////////////////////////////////////////////////////
     /// @brief Iterate across the profiles and switch to the next calibrated.
@@ -76,8 +78,7 @@ public:
     ///
     /// Z offset is clamped between zOffsetMin and zOffsetMax and the unit is mm
     /// @param[in] offset  of the sheet
-    /// @return True when Z offset is set, False otherwise.
-    static bool SetZOffset(float offset);
+    static void SetZOffset(float offset);
     ///////////////////////////////////////////////////////////////////////////////
     /// @brief Gets offset of currently selected sheet.
     ///
@@ -98,8 +99,7 @@ private:
     /// Z offset is clamped between zOffsetMin and zOffsetMax
     /// @param[in] index Index of the sheet profile
     /// @param[in]  offset of the sheet
-    /// @return True when successful, false if not
-    static bool setSheetOffset(uint32_t index, float offset);
+    static void setSheetOffset(uint32_t index, float offset);
 
     ///////////////////////////////////////////////////////////////////////////////
     /// @brief Determine the index of active sheet
@@ -108,7 +108,7 @@ private:
     static uint32_t activeSheetIndex();
 
     static Sheet getSheet(uint32_t index);
-    static bool setSheet(uint32_t index, Sheet sheet);
+    static void setSheet(uint32_t index, Sheet sheet);
 
     ///////////////////////////////////////////////////////////////////////////////
     /// @brief Updates probe Z offset variable in marlin

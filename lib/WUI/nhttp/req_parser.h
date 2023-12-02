@@ -16,7 +16,7 @@
 namespace nhttp {
 class ServerDefs;
 class Server;
-}
+} // namespace nhttp
 
 namespace nhttp::handler {
 
@@ -92,6 +92,7 @@ public:
 
     bool print_after_upload : 1;
     bool overwrite_file : 1;
+    bool create_folder : 1;
 
 private:
     struct DigestAuthParams {
@@ -155,4 +156,4 @@ public:
     std::string_view boundary() const { return std::string_view(url.begin() + url_size, boundary_size); }
 };
 
-}
+} // namespace nhttp::handler

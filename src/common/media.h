@@ -2,16 +2,23 @@
 #pragma once
 
 #include <inttypes.h>
+#include <gcode/gcode_reader.hpp> // for PrusaPackGcodeReader::stream_restore_info_t
 
-static const uint32_t MEDIA_PRINT_UNDEF_POSITION = UINT32_MAX;
+#define PREFETCH_SIGNAL_START           1
+#define PREFETCH_SIGNAL_STOP            2
+#define PREFETCH_SIGNAL_FETCH           4
+#define PREFETCH_SIGNAL_GCODE_INFO_INIT 8
+#define PREFETCH_SIGNAL_GCODE_INFO_STOP 16
+#define PREFETCH_SIGNAL_CHECK           32 ///< Re-checks that the file is still valid
+
 typedef enum {
-    media_state_REMOVED = 0,  // media is inserted
+    media_state_REMOVED = 0, // media is inserted
     media_state_INSERTED = 1, // media is removed
-    media_state_ERROR = 2,    // media is in error state (TODO)
+    media_state_ERROR = 2, // media is in error state (TODO)
 } media_state_t;
 
 typedef enum {
-    media_error_OK = 0,    // no error
+    media_error_OK = 0, // no error
     media_error_MOUNT = 1, // error - mounting media - f_mount failed
 } media_error_t;
 
@@ -19,21 +26,23 @@ typedef enum {
     media_print_state_NONE = 0,
     media_print_state_PRINTING = 1,
     media_print_state_PAUSED = 2,
-    media_print_state_DRAINING = 3,
 } media_print_state_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif //__cplusplus
 
-/// Do not use this anywhere - the accessor functions are here just because marlin_server.cpp needs the allocated buffer.
-/// @@TODO to be improved in the future
-extern char *media_print_filename();
-extern char *media_print_filepath();
-
 extern media_state_t media_get_state(void);
 
-/// Copies the content of sfnFilePath into marlin_vars->media_SFN_path (aka media_print_filepath)
+/**
+ * @brief Init mutexes and such of media_prefetch.
+ */
+extern void media_prefetch_init();
+
+extern osThreadId prefetch_thread_id;
+void media_prefetch(const void *);
+
+/// Copies the content of sfnFilePath into marlin_vars->media_SFN_path
 /// Updates marlin_vars->media_LFN as a side-effect by opening the marlin_vars->media_SFN_path and reading its LFN
 extern void media_print_start__prepare(const char *sfnFilePath);
 
@@ -48,8 +57,13 @@ extern void media_print_resume(void);
 
 /// Stop adding new commands immediately and pause the reading
 /// \param pos position in the file where the print should be resumed
-/// media_print_quick_stop is safe to use within an ISR
 extern void media_print_quick_stop(uint32_t pos);
+
+/**
+ * @brief Stop adding new commands immediately and pause the reading.
+ * This function is not thread safe and can only be used from powerpanic.
+ */
+extern void media_print_quick_stop_powerpanic();
 
 extern media_print_state_t media_print_get_state(void);
 
@@ -71,7 +85,9 @@ extern void media_set_removed(void);
 extern void media_set_error(media_error_t error);
 
 extern void media_reset_usbh_error();
-extern void media_reset_USB_host();
+
+extern void media_set_restore_info(PrusaPackGcodeReader::stream_restore_info_t &info);
+extern PrusaPackGcodeReader::stream_restore_info_t media_get_restore_info();
 
 #ifdef __cplusplus
 }

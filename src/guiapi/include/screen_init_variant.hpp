@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <optional>
 
-//TODO do not use selftest mask here, we need special enum for GUI
+// TODO do not use selftest mask here, we need special enum for GUI
 #if __has_include("printer_selftest.hpp")
     #include "printer_selftest.hpp" // SelftestMask_t
 #endif
@@ -23,8 +23,8 @@ public:
     };
 
     struct menu_t {
-        uint8_t index;
-        uint8_t top_index;
+        uint8_t focused_index;
+        uint8_t scroll_offset;
     };
 
     constexpr screen_init_variant()
@@ -70,6 +70,11 @@ public:
         return selftest_mask;
     }
 #endif
+
+    constexpr bool IsValid() {
+        return type != type_t::data_not_valid;
+    }
+
 private:
     type_t type;
     union {

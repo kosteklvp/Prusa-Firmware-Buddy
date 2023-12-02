@@ -3,22 +3,41 @@
  */
 
 #include "footer_item_fsensor.hpp"
-#include "filament_sensor_api.hpp"
-#include "png_resources.hpp"
+#include "filament_sensors_handler.hpp"
+#include "img_resources.hpp"
 #include "i18n.h"
 #include <algorithm>
 #include <cmath>
 
 FooterItemFSensor::FooterItemFSensor(window_t *parent)
-    : AddSuperWindow<FooterIconText_IntVal>(parent, &png::filament_sensor_17x16, static_makeView, static_readValue) {
+    : AddSuperWindow<FooterIconText_IntVal>(parent, &img::filament_sensor_17x16, static_makeView, static_readValue) {
+}
+
+FooterItemFSensorSide::FooterItemFSensorSide(window_t *parent)
+    : AddSuperWindow<FooterIconText_IntVal>(parent, &img::side_filament_sensor_17x16, static_makeView, static_readValue) {
 }
 
 int FooterItemFSensor::static_readValue() {
-    return int(FSensors_instance().GetPrinter());
+    if (IFSensor *sensor = get_active_printer_sensor(); sensor) {
+        return static_cast<int>(sensor->Get());
+    }
+    return no_tool_value;
 }
 
-//TODO FIXME last character is not shown, I do not know why, added space as workaround
+int FooterItemFSensorSide::static_readValue() {
+    if (IFSensor *sensor = get_active_side_sensor(); sensor) {
+        return static_cast<int>(sensor->Get());
+    }
+    return no_tool_value;
+}
+
+// TODO FIXME last character is not shown, I do not know why, added space as workaround
 string_view_utf8 FooterItemFSensor::static_makeView(int value) {
+    // Show --- if no tool is picked
+    if (value == no_tool_value) {
+        return string_view_utf8::MakeCPUFLASH(reinterpret_cast<const uint8_t *>(no_tool_str));
+    }
+
     fsensor_t state = fsensor_t(value);
     const char *txt = N_("N/A ");
 
@@ -42,7 +61,7 @@ string_view_utf8 FooterItemFSensor::static_makeView(int value) {
     case fsensor_t::NotConnected:
         txt = N_("NC ");
         break;
-#else  //!DEBUG
+#else //! DEBUG
     default:
         break;
 #endif //_DEBUG
@@ -50,5 +69,3 @@ string_view_utf8 FooterItemFSensor::static_makeView(int value) {
 
     return string_view_utf8(_(txt));
 }
-
-string_view_utf8 FooterItemFSensor::GetName() { return _("F. Sensor"); }

@@ -2,7 +2,7 @@
 #include "config.h"
 #include "i18n.h"
 #include "ScreenHandler.hpp"
-#include "png_resources.hpp"
+#include "img_resources.hpp"
 
 IScreenPrinting::IScreenPrinting(string_view_utf8 caption)
     : AddSuperWindow<screen_t>()
@@ -10,7 +10,7 @@ IScreenPrinting::IScreenPrinting(string_view_utf8 caption)
     , footer(this) {
     IScreenPrinting::ClrMenuTimeoutClose(); // don't close on menu timeout
     header.SetText(caption);
-    header.SetIcon(&png::print_16x16);
+    header.SetIcon(&img::print_16x16);
     ths = this;
 }
 
@@ -21,18 +21,21 @@ IScreenPrinting::~IScreenPrinting() {
 IScreenPrinting *IScreenPrinting::ths = nullptr;
 
 /******************************************************************************/
-//static methods to be pointed by fnc pointers
+// static methods to be pointed by fnc pointers
 void IScreenPrinting::StopAction() {
-    if (IScreenPrinting::ths)
+    if (IScreenPrinting::ths) {
         IScreenPrinting::ths->stopAction();
+    }
 }
 void IScreenPrinting::PauseAction() {
-    if (IScreenPrinting::ths)
+    if (IScreenPrinting::ths) {
         IScreenPrinting::ths->pauseAction();
+    }
 }
 void IScreenPrinting::TuneAction() {
-    if (IScreenPrinting::ths)
+    if (IScreenPrinting::ths) {
         IScreenPrinting::ths->tuneAction();
+    }
 }
 
 IScreenPrinting *IScreenPrinting::GetInstance() {
@@ -40,6 +43,7 @@ IScreenPrinting *IScreenPrinting::GetInstance() {
 }
 
 void IScreenPrinting::NotifyMarlinStart() {
-    if (ths)
+    if (ths) {
         ths->notifyMarlinStart();
+    }
 }

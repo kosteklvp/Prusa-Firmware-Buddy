@@ -1,4 +1,4 @@
-target_include_directories(firmware PRIVATE ${PRINTER})
+target_include_directories(firmware PRIVATE include_${PRINTER})
 
 target_sources(
   firmware
@@ -15,4 +15,28 @@ target_sources(
           selftest_heaters_interface.cpp
           selftest_netstatus_interface.cpp
           selftest_part.cpp
+          selftest_tool_helper.cpp
   )
+
+if(HAS_LOADCELL)
+  target_sources(firmware PRIVATE selftest_loadcell.cpp selftest_loadcell_interface.cpp)
+endif()
+
+if(PRINTER STREQUAL "MK4")
+  target_sources(firmware PRIVATE selftest_gears.cpp selftest_hot_end_sock.cpp)
+endif()
+
+if(HAS_ADVANCED_POWER)
+  target_sources(firmware PRIVATE power_check.cpp power_check_both.cpp)
+endif()
+
+if(FILAMENT_SENSOR STREQUAL ADC)
+  target_sources(firmware PRIVATE selftest_fsensor.cpp selftest_fsensor_interface.cpp)
+endif()
+
+if(HAS_DWARF)
+  target_sources(
+    firmware PRIVATE selftest_dock.cpp selftest_dock_interface.cpp selftest_tool_offsets.cpp
+                     selftest_tool_offsets_interface.cpp
+    )
+endif()

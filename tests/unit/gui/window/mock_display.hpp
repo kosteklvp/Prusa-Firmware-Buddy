@@ -4,14 +4,14 @@
  *  all methods are static, because I need to pass them by function pointers
  */
 
-//mock_display.hpp
+// mock_display.hpp
 #pragma once
 #include "guitypes.hpp"
 #include <inttypes.h>
 #include <memory>
 #include <array>
 
-//interface
+// interface
 class IMockDisplay {
 public:
     virtual uint16_t Cols() = 0;
@@ -27,7 +27,7 @@ public:
     virtual ~IMockDisplay() = default;
 };
 
-//template for different display sizes
+// template for different display sizes
 template <uint16_t COLS, uint16_t ROWS, uint16_t BUFF_ROWS>
 class TMockDisplay : public IMockDisplay {
 public:
@@ -79,10 +79,12 @@ public:
     static void done() {}
     static void set_backlight(uint8_t bck) {}
 
-    static void ReadMadctl(uint8_t *pdata, uint8_t size) {
+    static void ReadMadctl(uint8_t *pdata) {
         pdata[0] = 0x00;
         pdata[1] = 0xE0;
     }
+
+    static void Reset() {}
 
     static IMockDisplay &Instance();
     static void Bind(IMockDisplay &disp);

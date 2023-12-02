@@ -15,7 +15,7 @@ protected:
     static string_view_utf8 static_makeViewIntoBuff(int value, buffer_t &buff);
 
 public:
-    IFooterItemFan(window_t *parent, const png::Resource *icon, view_maker_cb view_maker, reader_cb value_reader);
+    IFooterItemFan(window_t *parent, const img::Resource *icon, view_maker_cb view_maker, reader_cb value_reader);
 };
 
 /**
@@ -29,7 +29,6 @@ class FooterItemPrintFan : public AddSuperWindow<IFooterItemFan> {
     }
 
 public:
-    static string_view_utf8 GetName();
     FooterItemPrintFan(window_t *parent);
 };
 
@@ -44,6 +43,5 @@ class FooterItemHeatBreakFan : public AddSuperWindow<IFooterItemFan> {
     }
 
 public:
-    static string_view_utf8 GetName();
     FooterItemHeatBreakFan(window_t *parent);
 };

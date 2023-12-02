@@ -9,8 +9,10 @@
 #include "bsod.h"
 #include <string.h>
 #include "sys.h"
+#include <span>
 
-#include "scratch_buffer.hpp"
+#include <random.h>
+#include "data_exchange.hpp"
 #include "resources/bootstrap.hpp"
 #include "resources/revision_bootloader.hpp"
 #include "bootloader/bootloader.hpp"
@@ -19,7 +21,6 @@
 // FIXME: Those includes are here only for the RNG.
 // We should add support for the stdlib's standard random function
 #include "main.h"
-#include "stm32f4xx_hal.h"
 
 LOG_COMPONENT_REF(Bootloader);
 
@@ -28,20 +29,16 @@ LOG_COMPONENT_REF(Bootloader);
 using Version = buddy::bootloader::Version;
 using UpdateStage = buddy::bootloader::UpdateStage;
 
-constexpr static size_t bootloader_sector_sizes[] = { 16384, 16384, 16384, 16384, 65536 };
-
-constexpr static size_t bootloader_sector_count = sizeof(bootloader_sector_sizes) / sizeof(bootloader_sector_sizes[0]);
-
 constexpr size_t bootloader_sector_get_size(int sector) {
-    return bootloader_sector_sizes[sector];
+    return buddy::bootloader::bootloader_sector_sizes[sector];
 }
 
-constexpr const uint8_t *bootloader_sector_get_address(int sector) {
-    uint8_t *base_address = (uint8_t *)0x08000000;
+constexpr uintptr_t bootloader_sector_get_address(int sector) {
+    uintptr_t base_address = 0x08000000;
     for (int i = 0; i < sector; i++) {
         base_address += bootloader_sector_get_size(i);
     }
-    return (const uint8_t *)base_address;
+    return base_address;
 }
 
 class FileDeleter {
@@ -50,15 +47,6 @@ public:
         fclose(file);
     }
 };
-
-static uint32_t random_number() {
-    uint32_t random = 0;
-    HAL_StatusTypeDef status;
-    do {
-        status = HAL_RNG_GenerateRandomNumber(&hrng, &random);
-    } while (status != HAL_OK);
-    return random;
-}
 
 static bool calculate_file_crc(FILE *fp, uint32_t length, uint32_t &crc) {
     uint8_t buffer[64];
@@ -125,19 +113,20 @@ static bool flash_program(const uint8_t *flash_address, const uint8_t *data, siz
 }
 
 template <typename ProgressCallback>
-static bool flash_program_sector(int sector, FILE *fp, ProgressCallback progress) {
-    size_t sector_size = bootloader_sector_get_size(sector);
-    const uint8_t *address = bootloader_sector_get_address(sector);
+static bool flash_program_sector(int sector, FILE *fp, std::span<uint8_t> buffer, ProgressCallback progress) {
+    const size_t sector_size = bootloader_sector_get_size(sector);
+    const uint8_t *address = reinterpret_cast<const uint8_t *>(bootloader_sector_get_address(sector));
     const uint8_t *next_sector_address = address + sector_size;
     size_t copied_bytes = 0;
 
-    buddy::scratch_buffer::Ownership scratch_buffer_ownership;
-    scratch_buffer_ownership.acquire(/*wait=*/true);
-    uint8_t *buffer = scratch_buffer_ownership.get().buffer;
+    if (sector == 0) {
+        // make sure we will update the prebootloader in one go
+        assert(buffer.size() >= bootloader_sector_get_size(0));
+    }
 
     while (address < next_sector_address && !feof(fp)) {
-        size_t to_read = std::min(scratch_buffer_ownership.get().size(), static_cast<size_t>(next_sector_address - address));
-        size_t read = fread(buffer, 1, to_read, fp);
+        size_t to_read = std::min(buffer.size(), static_cast<size_t>(next_sector_address - address));
+        size_t read = fread(buffer.data(), 1, to_read, fp);
 
         if (ferror(fp)) {
             log_error(Bootloader, "Bootloader reading failed while flashing (errno %i)", errno);
@@ -145,7 +134,7 @@ static bool flash_program_sector(int sector, FILE *fp, ProgressCallback progress
         }
 
         log_debug(Bootloader, "Programming 0x%08X (size %zu)", address, read);
-        if (!flash_program(address, buffer, read)) {
+        if (!flash_program(address, buffer.data(), read)) {
             log_error(Bootloader, "Writing the bootloader to FLASH failed", errno);
             return false;
         }
@@ -177,7 +166,14 @@ static void copy_bootloader_to_flash(FILE *bootloader_bin, ProgressCallback prog
     const size_t total_bytes = 131072;
     size_t bytes_in_preceding_sectors = 0;
 
-    for (unsigned sector = 0; sector < bootloader_sector_count; sector++) {
+    auto buffer_size = bootloader_sector_get_size(0);
+    auto buffer_mem = std::make_unique<uint8_t[]>(buffer_size);
+    if (buffer_mem.get() == nullptr) {
+        bsod("Not enough memory");
+    }
+    auto buffer = std::span<uint8_t>(buffer_mem.get(), buffer_size);
+
+    for (unsigned sector = 0; sector < buddy::bootloader::bootloader_sector_count; sector++) {
 
         // do not reflash preboot if not necessary
         if (sector == 0) {
@@ -186,7 +182,7 @@ static void copy_bootloader_to_flash(FILE *bootloader_bin, ProgressCallback prog
                 fatal_error("expected preboot crc calculation failed");
             }
 
-            uint32_t current_preboot_crc = crc32_calc(bootloader_sector_get_address(0), bootloader_sector_get_size(0));
+            uint32_t current_preboot_crc = crc32_calc(reinterpret_cast<const uint8_t *>(bootloader_sector_get_address(0)), bootloader_sector_get_size(0));
             if (current_preboot_crc == expected_preboot_crc) {
                 log_info(Bootloader, "No need to update preboot. Skipping sector 0.");
                 continue;
@@ -199,7 +195,7 @@ static void copy_bootloader_to_flash(FILE *bootloader_bin, ProgressCallback prog
 
         // add random delay to make preboot flashing less predictable
         if (sector == 0) {
-            uint32_t delay_ms = 100 + (random_number() % 7000);
+            uint32_t delay_ms = 100 + (rand_u() % 7000);
             osDelay(delay_ms);
         }
 
@@ -216,7 +212,7 @@ static void copy_bootloader_to_flash(FILE *bootloader_bin, ProgressCallback prog
 
         // program the sector
         HAL_FLASH_Unlock();
-        bool flash_successful = flash_program_sector(sector, bootloader_bin, [&](size_t bytes_written) {
+        bool flash_successful = flash_program_sector(sector, bootloader_bin, buffer, [&](size_t bytes_written) {
             if (sector != 0) {
                 // do not report progress for sector 0, as updating preboot is potentially dangerous
                 // and we want to be as quick as possible and minimize the code running in-between
@@ -237,7 +233,7 @@ static void copy_bootloader_to_flash(FILE *bootloader_bin, ProgressCallback prog
 }
 
 bool buddy::bootloader::needs_update() {
-    if (sys_bootloader_is_valid() == false) {
+    if (data_exchange::is_bootloader_valid() == false) {
         return true;
     }
 

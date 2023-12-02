@@ -390,6 +390,11 @@
 #undef EXTENDABLE_EMU_MMU2
 #undef EXTENDABLE_EMU_MMU2S
 
+#ifdef HAS_PRUSA_MMU2
+  // TODO: compatibility stub for Marlin 2.0. Remove after merge. Use HAS_PRUSA_MMU2 instead.
+  #define PRUSA_MMU2 1
+#endif
+
 /**
  * Extruders have some combination of stepper motors and hotends
  * so we separate these concepts into the defines:
@@ -457,7 +462,9 @@
 
   #define E_STEPPERS      1
   #define E_MANUAL        1
-
+#elif ENABLED(PRUSA_TOOLCHANGER)
+  #define E_STEPPERS      1
+  #define E_MANUAL        EXTRUDERS
 #endif
 
 // No inactive extruders with SWITCHING_NOZZLE or Průša MMU1
@@ -942,8 +949,12 @@
 #define HAS_GAMES     ANY(MARLIN_BRICKOUT, MARLIN_INVADERS, MARLIN_SNAKE, MARLIN_MAZE)
 #define HAS_GAME_MENU (1 < ENABLED(MARLIN_BRICKOUT) + ENABLED(MARLIN_INVADERS) + ENABLED(MARLIN_SNAKE) + ENABLED(MARLIN_MAZE))
 
-#define IS_SCARA     ENABLED(MORGAN_SCARA)
-#define IS_KINEMATIC (ENABLED(DELTA) || IS_SCARA)
+#if ENABLED(MORGAN_SCARA)
+  #define IS_SCARA 1
+#endif
+#if (ENABLED(DELTA) || IS_SCARA)
+  #define IS_KINEMATIC 1
+#endif
 #define IS_CARTESIAN !IS_KINEMATIC
 
 #ifndef INVERT_X_DIR

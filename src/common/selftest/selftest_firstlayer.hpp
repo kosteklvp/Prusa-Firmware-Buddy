@@ -24,10 +24,10 @@ namespace selftest {
  */
 class CSelftestPart_FirstLayer {
     enum class StateSelectedByUser {
-        Calib,   // run calibration with current filament
+        Calib, // run calibration with current filament
         Preheat, // open preheat dialog to force set filament
-        Load,    // load new filament
-        Unload   // unload filament
+        Load, // load new filament
+        Unload // unload filament
     };
 
     IPartHandler &rStateMachine;
@@ -38,7 +38,6 @@ class CSelftestPart_FirstLayer {
     int temp_bed;
 
     uint32_t how_many_times_finished;
-    bool filament_known_but_detected_as_not_inserted;
     bool current_offset_is_default;
     bool reprint;
     StateSelectedByUser state_selected_by_user;
@@ -52,7 +51,7 @@ public:
         SelftestFirstLayer_t &result);
 
     LoopResult stateStart();
-    LoopResult stateCycleMark() { return LoopResult::MarkLoop; }
+    LoopResult stateCycleMark() { return LoopResult::MarkLoop0; }
     LoopResult stateAskFilamentInit();
     LoopResult stateAskFilament();
     LoopResult statePreheatEnqueueGcode();
@@ -84,4 +83,4 @@ public:
     LoopResult stateHandleNext();
 };
 
-};
+}; // namespace selftest

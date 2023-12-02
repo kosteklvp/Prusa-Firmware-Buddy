@@ -1,10 +1,12 @@
 #include "segmented_json.h"
 #include "json_encode.h"
+#include "codepage/437.hpp"
 
 #include <cassert>
 #include <cstdio>
 #include <cstdarg>
 #include <cinttypes>
+#include <cstring>
 
 using std::make_tuple;
 
@@ -32,6 +34,20 @@ JsonResult JsonOutput::output(size_t resume_point, const char *format, ...) {
     }
 }
 
+JsonResult JsonOutput::output_field_str_437(size_t resume_point, const char *name, const char *value) {
+    const size_t len_value = strlen(value);
+    uint8_t buffer[len_value * 3]; // Encoding might grow up to 3 times (\0 is not needed)
+    size_t len_encoded = codepage::cp437_to_utf8(buffer, reinterpret_cast<const uint8_t *>(value), len_value);
+
+    assert(len_encoded <= sizeof(buffer));
+    // There are no JSON-special characters in there in the encoded data because:
+    // * Control characters don't exist as our "dingbats" version of 437
+    // * " and \ are not allowed in SFN and this is for SFNs and similar only.
+    assert(jsonify_str_buffer_len(reinterpret_cast<const char *>(buffer), len_encoded) == 0);
+
+    return output(resume_point, "\"%s\":\"%.*s\"", name, static_cast<int>(len_encoded), reinterpret_cast<const char *>(buffer));
+}
+
 JsonResult JsonOutput::output_field_str(size_t resume_point, const char *name, const char *value) {
     JSONIFY_STR(value);
     return output(resume_point, "\"%s\":\"%s\"", name, value_escaped);
@@ -44,8 +60,19 @@ JsonResult JsonOutput::output_field_str_format(size_t resume_point, const char *
     // First, discover how much space we need for the formatted string.
     char first_buffer[1];
     // +1 for \0
-    const size_t needed = vsnprintf(first_buffer, 1, format, params1) + 1;
+    size_t needed = vsnprintf(first_buffer, 1, format, params1) + 1;
     va_end(params1);
+
+    if (needed > buffer_size) {
+        // This won't fit. We want to reuse the output mechanism to handle all
+        // the nuances of not fitting in the correct way, but we want to cap
+        // the on-stack size to something sane (because the input could, in
+        // theory, be huge and we could risk overflow).
+        //
+        // Therefore, if we are _sure_ we won't fit, we shrink it to something
+        // that still won't fit, but not too much.
+        needed = buffer_size + 1;
+    }
 
     // Now, get the buffer of the right size and format it.
     char buffer[needed];
@@ -80,6 +107,9 @@ JsonResult JsonOutput::output_chunk(size_t resume_point, ChunkRenderer &renderer
     assert(written <= buffer_size);
     buffer += written;
     buffer_size -= written;
+    if (written > 0) {
+        written_something = true;
+    }
     if (result != JsonResult::Complete) {
         this->resume_point = resume_point;
     }
@@ -99,4 +129,4 @@ std::tuple<JsonResult, size_t> LowLevelJsonRenderer::render(uint8_t *buffer, siz
     return make_tuple(result, written);
 }
 
-}
+} // namespace json

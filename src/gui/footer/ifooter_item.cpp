@@ -34,18 +34,20 @@ void IFooterItem::windowEvent(EventLock /*has private ctor*/, window_t *sender, 
             last_updated = now;
             TickResult res = tick();
             if (res == TickResult::changed_and_resized) {
-                if (GetParent())
+                if (GetParent()) {
                     GetParent()->WindowEvent(this, GUI_event_t::CHILD_CHANGED, nullptr);
+                }
             }
         }
     } break;
     case GUI_event_t::REINIT_FOOTER:
-        //print format could change - updateState will recreate stringview
-        //do not update value (it is not its time)
-        //just update state and notify parent if size changed
+        // print format could change - updateState will recreate stringview
+        // do not update value (it is not its time)
+        // just update state and notify parent if size changed
         if (updateState() == resized_t::yes) {
-            if (GetParent())
+            if (GetParent()) {
                 GetParent()->WindowEvent(this, GUI_event_t::CHILD_CHANGED, nullptr);
+            }
         }
         break;
     default:
@@ -61,7 +63,7 @@ Rect16::Width_t IFooterItem::TextWidth(string_view_utf8 text) {
     return txt_size.w;
 }
 
-IFooterIconText::IFooterIconText(window_t *parent, const png::Resource *icon, Rect16::W_t width)
+IFooterIconText::IFooterIconText(window_t *parent, const img::Resource *icon, Rect16::W_t width)
     : AddSuperWindow<IFooterItem>(parent, width)
     , icon(this, icon)
     , text(this, Rect16::Left_t(icon ? icon->w + GuiDefaults::FooterIconTextSpace : 0)) {
@@ -73,7 +75,7 @@ Rect16::Width_t IFooterIconText::MeasureTextWidth(string_view_utf8 text) {
     return txt_size.w;
 }
 
-FooterIconText_IntVal::FooterIconText_IntVal(window_t *parent, const png::Resource *icon,
+FooterIconText_IntVal::FooterIconText_IntVal(window_t *parent, const img::Resource *icon,
     view_maker_cb view_maker, reader_cb value_reader)
     : AddSuperWindow<IFooterIconText>(parent, icon, GetTotalWidth(icon ? icon->w : 0, view_maker(value_reader())))
     , makeView(view_maker)
@@ -110,7 +112,7 @@ resized_t FooterIconText_IntVal::updateState() {
     }
     return resized_t::no;
 }
-FooterIconText_FloatVal::FooterIconText_FloatVal(window_t *parent, const png::Resource *icon,
+FooterIconText_FloatVal::FooterIconText_FloatVal(window_t *parent, const img::Resource *icon,
     view_maker_cb view_maker, reader_cb value_reader)
     : AddSuperWindow<IFooterIconText>(parent, icon, GetTotalWidth(icon ? icon->w : 0, view_maker(value_reader())))
     , makeView(view_maker)

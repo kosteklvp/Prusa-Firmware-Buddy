@@ -95,6 +95,8 @@ feedRate_t get_homing_bump_feedrate(const AxisEnum axis);
 
 extern feedRate_t feedrate_mm_s;
 
+extern float homing_bump_divisor[];
+
 /**
  * Feedrate scaling is applied to all G0/G1, G2/G3, and G5 moves
  */
@@ -130,11 +132,12 @@ XYZ_DEFS(signed char, home_dir, HOME_DIR);
 
 #if HAS_HOTEND_OFFSET
   extern xyz_pos_t hotend_offset[HOTENDS];
+  extern xyz_pos_t hotend_currently_applied_offset; // Difference to position without hotend offset. Used for tool park/pickup
   void reset_hotend_offsets();
 #elif HOTENDS
-  constexpr xyz_pos_t hotend_offset[HOTENDS] = { { 0 } };
+  constexpr xyz_pos_t hotend_offset[HOTENDS] { };
 #else
-  constexpr xyz_pos_t hotend_offset[1] = { { 0 } };
+  constexpr xyz_pos_t hotend_offset[1]  {  };
 #endif
 
 typedef struct { xyz_pos_t min, max; } axis_limits_t;
@@ -188,6 +191,7 @@ void line_to_current_position(const feedRate_t &fr_mm_s=feedrate_mm_s);
 void plan_move_by(const feedRate_t fr, const float dx, const float dy = 0, const float dz = 0, const float de = 0);
 
 void prepare_move_to_destination();
+static inline void prepare_line_to_destination() { prepare_move_to_destination(); } // stub
 
 void _internal_move_to_destination(const feedRate_t &fr_mm_s=0.0f
   #if IS_KINEMATIC
@@ -270,21 +274,20 @@ static inline bool homing_needed_error(uint8_t axis_bits=0x07) { return axis_unh
   #define MOTION_CONDITIONS IsRunning()
 #endif
 
-void set_axis_is_at_home(const AxisEnum axis);
+void set_axis_is_at_home(const AxisEnum axis, bool homing_z_with_probe = true);
 
 void set_axis_is_not_at_home(const AxisEnum axis);
 
-#if ENABLED(PRECISE_HOMING)
-  void homeaxis(const AxisEnum axis, const feedRate_t fr_mm_s=0.0, bool invert_home_dir = false, bool can_calibrate = true);
-#else
-  void homeaxis(const AxisEnum axis, const feedRate_t fr_mm_s=0.0, bool invert_home_dir = false);
-#endif
+void homing_failed(std::function<void()> fallback_error, bool crash_was_active = false, bool recover_z = false);
 
-void do_homing_move(const AxisEnum axis, const float distance, const feedRate_t fr_mm_s=0.0
-  #if ENABLED(MOVE_BACK_BEFORE_HOMING)
-    , bool can_move_back_before_homing = false
-  #endif
-);
+// Home a single logical axis
+[[nodiscard]] bool homeaxis(const AxisEnum axis, const feedRate_t fr_mm_s=0.0, bool invert_home_dir = false, void (*enable_wavetable)(AxisEnum) = NULL, bool can_calibrate = true, bool homing_z_with_probe = true);
+
+// Perform a single homing probe on a logical axis
+float homeaxis_single_run(const AxisEnum axis, const int axis_home_dir, const feedRate_t fr_mm_s = 0.0, bool invert_home_dir = false, bool homing_z_with_probe = true);
+
+// Perform a single homing move on a logical axis
+uint8_t do_homing_move(const AxisEnum axis, const float distance, const feedRate_t fr_mm_s=0.0, bool can_move_back_before_homing = false, bool homing_z_with_probe = true);
 
 /**
  * Workspace offsets
@@ -304,14 +307,25 @@ void do_homing_move(const AxisEnum axis, const float distance, const feedRate_t 
   #else
     #define _WS position_shift
   #endif
-  #define NATIVE_TO_LOGICAL(POS, AXIS) ((POS) + _WS[AXIS])
-  #define LOGICAL_TO_NATIVE(POS, AXIS) ((POS) - _WS[AXIS])
-  FORCE_INLINE void toLogical(xy_pos_t &raw)   { raw += _WS; }
-  FORCE_INLINE void toLogical(xyz_pos_t &raw)  { raw += _WS; }
-  FORCE_INLINE void toLogical(xyze_pos_t &raw) { raw += _WS; }
-  FORCE_INLINE void toNative(xy_pos_t &raw)    { raw -= _WS; }
-  FORCE_INLINE void toNative(xyz_pos_t &raw)   { raw -= _WS; }
-  FORCE_INLINE void toNative(xyze_pos_t &raw)  { raw -= _WS; }
+  #if DISABLED(PRUSA_TOOLCHANGER)
+    #define NATIVE_TO_LOGICAL(POS, AXIS) ((POS) + _WS[AXIS])
+    #define LOGICAL_TO_NATIVE(POS, AXIS) ((POS) - _WS[AXIS])
+    FORCE_INLINE void toLogical(xy_pos_t &raw)   { raw += _WS; }
+    FORCE_INLINE void toLogical(xyz_pos_t &raw)  { raw += _WS; }
+    FORCE_INLINE void toLogical(xyze_pos_t &raw) { raw += _WS; }
+    FORCE_INLINE void toNative(xy_pos_t &raw)    { raw -= _WS; }
+    FORCE_INLINE void toNative(xyz_pos_t &raw)   { raw -= _WS; }
+    FORCE_INLINE void toNative(xyze_pos_t &raw)  { raw -= _WS; }
+  #else
+    #define NATIVE_TO_LOGICAL(POS, AXIS) ((AXIS <= Z_AXIS) ? ((POS) + _WS[AXIS] + hotend_currently_applied_offset[AXIS]) : (POS))
+    #define LOGICAL_TO_NATIVE(POS, AXIS) ((AXIS <= Z_AXIS) ? ((POS) - _WS[AXIS] - hotend_currently_applied_offset[AXIS]) : (POS))
+    FORCE_INLINE void toLogical(xy_pos_t &raw)   { raw += _WS + hotend_currently_applied_offset; }
+    FORCE_INLINE void toLogical(xyz_pos_t &raw)  { raw += _WS + hotend_currently_applied_offset; }
+    FORCE_INLINE void toLogical(xyze_pos_t &raw) { raw += _WS + hotend_currently_applied_offset; }
+    FORCE_INLINE void toNative(xy_pos_t &raw)    { raw -= _WS + hotend_currently_applied_offset; }
+    FORCE_INLINE void toNative(xyz_pos_t &raw)   { raw -= _WS + hotend_currently_applied_offset; }
+    FORCE_INLINE void toNative(xyze_pos_t &raw)  { raw -= _WS + hotend_currently_applied_offset; }
+  #endif
 #else
   #define NATIVE_TO_LOGICAL(POS, AXIS) (POS)
   #define LOGICAL_TO_NATIVE(POS, AXIS) (POS)
@@ -391,7 +405,7 @@ void do_homing_move(const AxisEnum axis, const float distance, const feedRate_t 
      *          nozzle must be be able to reach +10,-10.
      */
     inline bool position_is_reachable_by_probe(const float &rx, const float &ry) {
-      return position_is_reachable(rx - probe_offset.x, ry - probe_offset.y)
+      return position_is_reachable(rx - probe_offset.x - TERN0(HAS_HOTEND_OFFSET, hotend_currently_applied_offset.x), ry - probe_offset.y - TERN0(HAS_HOTEND_OFFSET, hotend_currently_applied_offset.y))
           && WITHIN(rx, probe_min_x() - slop, probe_max_x() + slop)
           && WITHIN(ry, probe_min_y() - slop, probe_max_y() + slop);
     }
@@ -463,23 +477,3 @@ FORCE_INLINE bool position_is_reachable_by_probe(const xy_pos_t &pos) { return p
   sensorless_t start_sensorless_homing_per_axis(const AxisEnum axis);
   void end_sensorless_homing_per_axis(const AxisEnum axis, sensorless_t enable_stealth);
 #endif
-
-#if ENABLED(PRECISE_HOMING)
-  
-  /**
-  * \returns offset of current position to calibrated safe home position.
-  * This includes HOME_GAP. Works for X and Y axes only.
-  */
-  float calibrated_home_offset(const AxisEnum axis);
-
-  /**
-   * Provides precise homing for X and Y axes
-   * \param axis axis to be homed (cartesian printers only)
-   * \param axis_home_dir direction where the home of the axis is
-   * \param can_calibrate allows re-calibration if homing is not successful
-   * calibration should be disabled for crash recovery, power loss recovery etc.
-   * \return probe offset
-   */ 
-  float home_axis_precise(AxisEnum axis, int axis_home_dir, bool can_calibrate = true);
-
-#endif // ENABLED(PRECISE_HOMING)

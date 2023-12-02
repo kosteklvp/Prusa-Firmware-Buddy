@@ -1,6 +1,8 @@
 #ifndef __LWIPOPTS__H__
 #define __LWIPOPTS__H__
 
+#include "printers.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -8,20 +10,25 @@ extern "C" {
 #include <stdint.h>
 
 #define WITH_RTOS            1
+#define MEM_LIBC_MALLOC      0
 #define CHECKSUM_BY_HARDWARE 0
-
 #define LWIP_DHCP            1
 #define MEM_ALIGNMENT        4
-#define MEMP_NUM_SYS_TIMEOUT 7
+#define MEMP_NUM_SYS_TIMEOUT 8
 #define LWIP_ETHERNET        1
 #define LWIP_DNS_SECURE      7
 #define DNS_MAX_NAME_LENGTH  128
 
-#define TCP_MSS                536
-#define TCP_WND                (2 * TCP_MSS)
-#define TCPIP_THREAD_STACKSIZE 1024
-
-#define TCPIP_MBOX_SIZE 6
+#define TCP_MSS                1024
+#define TCP_WND                (8 * TCP_MSS)
+#define TCP_SND_BUF            (2 * TCP_MSS)
+#define LWIP_WND_SCALE         0
+#define TCP_RCV_SCALE          0
+#define PBUF_POOL_SIZE         10
+#define PBUF_POOL_SMALL_SIZE   12
+#define IP_REASS_MAX_PBUFS     15
+#define TCPIP_THREAD_STACKSIZE 1248
+#define TCPIP_MBOX_SIZE        PBUF_POOL_SIZE + PBUF_POOL_SMALL_SIZE
 
 #define DEFAULT_UDP_RECVMBOX_SIZE TCPIP_MBOX_SIZE
 #define DEFAULT_TCP_RECVMBOX_SIZE TCPIP_MBOX_SIZE
@@ -39,8 +46,14 @@ extern "C" {
 #define CHECKSUM_CHECK_TCP        1
 #define CHECKSUM_CHECK_ICMP       1
 #define CHECKSUM_CHECK_ICMP6      1
+#define LWIP_CHECKSUM_ON_COPY     1
+#define HTTPD_USE_CUSTOM_FSDATA   0
 
-#define HTTPD_USE_CUSTOM_FSDATA 0
+#include "buddy/priorities_config.h"
+#define TCPIP_THREAD_PRIO TASK_PRIORITY_TCPIP_THREAD
+
+#define MEM_USE_POOLS         1
+#define MEMP_USE_CUSTOM_POOLS 1
 
 /*
  * FIXME:
@@ -69,15 +82,20 @@ extern "C" {
 #define LWIP_SINGLE_NETIF            0
 #define LWIP_NETIF_HOSTNAME          1
 #define LWIP_HTTPD_SUPPORT_POST      0
-#define LWIP_COMPAT_SOCKETS          2
+#define LWIP_COMPAT_SOCKETS          0
 #define LWIP_ALTCP                   0
 #define LWIP_HTTPD_DYNAMIC_FILE_READ 0
 #define LWIP_TIMERS                  1
 #define LWIP_SO_RCVTIMEO             1
 #define LWIP_SO_SNDTIMEO             1
 
-#define LWIP_DNS 1
+// Some attempts to "tune" it to use less memory in unstable network environment with many retries of new connections.
+#define LWIP_TCP_CLOSE_TIMEOUT_MS_DEFAULT 5000 /* 5s for closing a connection must be enough... or let the other side time out */
+#define TCP_OVERSIZE                      128
+#define LWIP_TCP_SACK_OUT                 1
+#define TCP_OOSEQ_MAX_PBUFS               3
 
+#define LWIP_DNS 1
 /*
  * We have a HTTP server (PrusaLink). The browsers tend to keep few
  * connections at ready and take up the slots. In general it works better
@@ -93,6 +111,8 @@ extern "C" {
 #define SO_REUSE         1 // Allow SOF_REUSEADDR to do something useful.
 
 #define MEMP_NUM_UDP_PCB 5
+
+#define MEMP_NUM_TCPIP_MSG_INPKT TCPIP_MBOX_SIZE
 
 #ifdef __cplusplus
 }

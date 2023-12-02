@@ -42,7 +42,7 @@
 #define USE_PRUSA_EEPROM_AS_SOURCE_OF_DEFAULT_VALUES
 
 #ifdef USE_PRUSA_EEPROM_AS_SOURCE_OF_DEFAULT_VALUES
-    #include "eeprom_function_api.h"
+    #include "config_store/store_c_api.h"
 #endif
 //===========================================================================
 //============================= Getting Started =============================
@@ -287,6 +287,12 @@
 //#define HOTEND_OFFSET_Y {0.0, 5.00}  // (mm) relative Y-offset for each nozzle
 //#define HOTEND_OFFSET_Z {0.0, 0.00}  // (mm) relative Z-offset for each nozzle
 
+//#define ACCELEROMETER
+#if ENABLED(ACCELEROMETER)
+    #define LOCAL_ACCELEROMETER
+    //#define REMOTE_ACCELEROMETER
+#endif
+
 // @section temperature
 
 //===========================================================================
@@ -391,12 +397,13 @@
 // Above this temperature the heater will be switched off.
 // This can protect components from overheating, but NOT from shorts and failures.
 // (Use MINTEMP for thermistor short/failure protection.)
-#define HEATER_0_MAXTEMP 290 + 15
+#define HEATER_0_MAXTEMP 290
 #define HEATER_1_MAXTEMP 275
 #define HEATER_2_MAXTEMP 275
 #define HEATER_3_MAXTEMP 275
 #define HEATER_4_MAXTEMP 275
 #define HEATER_5_MAXTEMP 275
+#define HEATER_MAXTEMP_SAFETY_MARGIN 15
 // Beware: this is the absolute temperature limit.
 // The MINI cannot normally reach 110C.
 // Thus all usage in the UI must be lowered by 10C to offer a valid temperature limit.
@@ -530,7 +537,7 @@
 
 #define THERMAL_PROTECTION_HOTENDS // Enable thermal protection for all extruders
 #define THERMAL_PROTECTION_BED // Enable thermal protection for the heated bed
-#define THERMAL_PROTECTION_CHAMBER // Enable thermal protection for the heated chamber
+//#define THERMAL_PROTECTION_CHAMBER // Enable thermal protection for the heated chamber
 
 //===========================================================================
 //============================= Mechanical Settings =========================
@@ -558,7 +565,7 @@
 //! implemented only for Cartesian kinematics
 #define MOVE_BACK_BEFORE_HOMING
 #if ENABLED(MOVE_BACK_BEFORE_HOMING)
-    #define MOVE_BACK_BEFORE_HOMING_DISTANCE 10.0f
+    #define MOVE_BACK_BEFORE_HOMING_DISTANCE 1.92f
 #endif
 
 // Specify here all the endstop connectors that are connected to any endstop or probe.
@@ -713,6 +720,8 @@
 #define CLASSIC_JERK
 #if DISABLED(CLASSIC_JERK)
     #define JUNCTION_DEVIATION_MM 0.02 // (mm) Distance from real junction edge
+    //#define JD_SMALL_SEGMENT_HANDLING // Handle small segments (< 1 mm) with large junction angles (> 135°) based on a local curvature estimate, instead of just the junction angle.
+    //#define JD_DEBUG_OUTPUT           // Output junction_cos_theta and vmax_junction_sqr to serial
 #endif
 
 /**
@@ -869,10 +878,19 @@
 // Feedrate (mm/m) for the "accurate" probe of each point
 #define Z_PROBE_SPEED_SLOW (Z_PROBE_SPEED_FAST / 3)
 
+// [ms] delay before first Z probe for taring
+#define Z_FIRST_PROBE_DELAY 0
+
 // The number of probes to perform at each point.
 //   Set to 2 for a fast/slow probe, using the second probe result.
 //   Set to 3 or more for slow probes, averaging the results.
 #define MULTIPLE_PROBING 2
+
+// Extra probing  for loadcell to remove out of bounds measured values caused by external non interesting things
+#define EXTRA_PROBING 1
+#define EXTRA_PROBING_TOL 0.1 // If the measured Z value is larger than this value, remove it and remeasure
+#define EXTRA_PROBING_RAIL 1.2 // Maximum value of Z measurement
+#define EXTRA_PROBING_MAXFAIL 5 // Maximum allowed number of failed probing measurements
 
 /**
  * Z probes require clearance when deploying, stowing, and moving between
@@ -1023,7 +1041,7 @@
  * Calibrates X, Y homing positions and uses
  * the reference to provide repeatable homing position.
  */
-#define PRECISE_HOMING
+//#define PRECISE_HOMING
 
 /**
  * Number of precise homing tries
@@ -1322,6 +1340,9 @@
 // Validate that endstops are triggered on homing moves
 //#define VALIDATE_HOMING_ENDSTOPS
 
+// Set STALTHCHOP on XY before homing
+#define XY_HOMING_STEALTCHCHOP
+
 // @section calibrate
 
 /**
@@ -1456,6 +1477,8 @@
 #if ENABLED(NOZZLE_PARK_FEATURE)
     #define Z_AXIS_LOAD_POS  40
     #define Z_AXIS_UNLOAD_POS 20
+    #define Y_AXIS_LOAD_POS    (std::numeric_limits<float>::quiet_NaN())
+    #define Y_AXIS_UNLOAD_POS  (std::numeric_limits<float>::quiet_NaN())
     // homing to this pos makes PTFE tube last longer
     #define X_AXIS_LOAD_POS  ((X_MAX_POS) / 4)
     #define X_AXIS_UNLOAD_POS  ((X_MAX_POS) / 4)

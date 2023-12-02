@@ -7,6 +7,7 @@
 #include "selftest_part.hpp"
 #include "i_selftest.hpp"
 #include "selftest_log.hpp"
+#include "utility_extensions.hpp"
 
 using namespace selftest;
 LOG_COMPONENT_REF(Selftest);
@@ -16,15 +17,15 @@ PhasesSelftest IPartHandler::fsm_phase_index = PhasesSelftest::_none;
 IPartHandler::IPartHandler(size_t sz, SelftestParts part)
     : current_state(IndexIdle())
     , current_state_enter_time(SelftestInstance().GetTime())
-    , state_count(sz)
-    , loop_mark(0) {
+    , state_count(sz) {
     fsm_phase_index = SelftestGetFirstPhaseFromPart(part);
 }
 
 bool IPartHandler::Loop() {
-    //exit idle state
-    if (current_state == -1)
+    // exit idle state
+    if (current_state == -1) {
         current_state = 0; // TODO i might want to use Start() somewhere in code instead
+    }
 
     if (current_state < 0 || current_state >= state_count) {
         // wait a bit so result is visible
@@ -43,7 +44,8 @@ bool IPartHandler::Loop() {
         break;
     }
 
-    switch (invokeCurrentState()) {
+    LoopResult current_loop_result = invokeCurrentState();
+    switch (current_loop_result) {
     case LoopResult::Abort:
         Abort();
         return false; // exit instantly
@@ -56,16 +58,36 @@ bool IPartHandler::Loop() {
     case LoopResult::RunNext:
         next(); // it will call Pass(), when switched to finished
         return true;
-    case LoopResult::MarkLoop:
-        loop_mark = current_state;
-        next();
-        return true;
-    case LoopResult::GoToMark:
-        changeCurrentState(loop_mark);
-        return true;
+    default: {
+        auto loop_mark = ftrstd::to_underlying(current_loop_result);
+
+        // LoopResult::MarkLoop0 also serves as flag, see enum definition
+        if (loop_mark & ftrstd::to_underlying(LoopResult::MarkLoop0)) {
+            loop_mark &= ~ftrstd::to_underlying(LoopResult::MarkLoop0);
+            if (loop_mark >= LoopMarkCount) {
+                bsod("MarkLoop out of range");
+            }
+            loop_marks[loop_mark] = current_state;
+            next();
+            return true;
+        }
+
+        // LoopResult::GoToMark0 also serves as flag, see enum definition
+        if (loop_mark & ftrstd::to_underlying(LoopResult::GoToMark0)) {
+            loop_mark &= ~ftrstd::to_underlying(LoopResult::GoToMark0);
+            if (loop_mark >= LoopMarkCount) {
+                bsod("GoToMark out of range");
+            }
+            changeCurrentState(loop_marks[loop_mark]);
+            next();
+            return true;
+        }
+
+        bsod("Undefined LoopResult");
+    }
     }
 
-    //we should never get here
+    // we should never get here
     return false;
 }
 
@@ -86,20 +108,24 @@ bool IPartHandler::isInProgress() const {
     return ((current_state >= 0) && (current_state < state_count));
 }
 
-TestResult_t IPartHandler::GetResult() const {
-    //cannot use switch, cases would be evaluated at runtime
-    if (current_state == IndexAborted())
-        return TestResult_t::Skipped;
-    if (current_state == IndexFinished())
-        return TestResult_t::Passed;
-    if (current_state == IndexFailed())
-        return TestResult_t::Failed;
-    return TestResult_t::Unknown;
+TestResult IPartHandler::GetResult() const {
+    // cannot use switch, cases would be evaluated at runtime
+    if (current_state == IndexAborted()) {
+        return TestResult_Skipped;
+    }
+    if (current_state == IndexFinished()) {
+        return TestResult_Passed;
+    }
+    if (current_state == IndexFailed()) {
+        return TestResult_Failed;
+    }
+    return TestResult_Unknown;
 }
 
 void IPartHandler::next() {
-    if (!isInProgress())
+    if (!isInProgress()) {
         return;
+    }
     changeCurrentState(current_state + 1); // state[count] == Passed
     if (current_state == IndexFinished()) {
         Pass();
@@ -126,6 +152,9 @@ void IPartHandler::Abort() {
     log_debug(Selftest, "IPartHandler::Abort");
     current_state = IndexAborted();
     abort();
+
+    // Terminate all moves (the hard way)
+    marlin_server::quick_stop();
 }
 
 bool IPartHandler::WaitSoLastStateIsVisible() const {
